@@ -1,9 +1,7 @@
-version: '3.8'
-
 services:
 
   postgres:
-    image: postgres:latest
+    image: postgres:15-alpine
     container_name: bookmyhotel_postgres
     environment:
       POSTGRES_DB: book_my_hotel
@@ -16,7 +14,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:latest
+    image: redis:7-alpine
     container_name: bookmyhotel_redis
     ports:
       - "6379:6379"
