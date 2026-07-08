@@ -20,7 +20,7 @@ public class UserDataDetails implements UserDetails {
 
     public UserDataDetails(User user) {
         this.user = user;
-        authorities =   List.of(new SimpleGrantedAuthority(user.getRole().toString()));
+        authorities =  List.of(new SimpleGrantedAuthority(user.getRole().toString()));
     }
 
 

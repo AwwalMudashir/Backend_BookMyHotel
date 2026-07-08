@@ -68,7 +68,7 @@ public class UserService {
         user.setLastName(onboardDto.getLastName());
         user.setEmail(onboardDto.getEmail());
         user.setPassword(bencoder.encode(onboardDto.getPassword()));
-        user.setRole(onboardDto.getRole());
+        user.setRole(onboardDto.getRole()); // TODO: CHECK THIS LOGIC OUT
 
         String userId = generateRandomId();
 
