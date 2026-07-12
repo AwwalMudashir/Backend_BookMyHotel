@@ -37,6 +37,12 @@ public class UserService {
     @Autowired
     private RefreshTokenService refreshTokenService;
 
+    @Autowired
+    private EmailTemplateService emailTemplateService;
+
+    @Autowired
+    private ResendEmailService resendEmailService;
+
     private BCryptPasswordEncoder bencoder = new BCryptPasswordEncoder(12);
 
     public String generateRandomId(){
@@ -48,10 +54,16 @@ public class UserService {
         return String.format("%06d", new java.util.Random().nextInt(999999));
     }
 
-    // TODO: ADD EMAIL INTEGRATION
     private void sendOtpEmail(String email, String otp) {
-        // TODO: Integrate your actual Email Sender service here
-        return;
+        String html = emailTemplateService.otpTemplate(email, otp, 5);
+
+        System.out.println("HTML template built, sending email");
+        resendEmailService.sendEmail(
+                email,
+                "OTP Verification",
+                html
+        );
+        System.out.println("Email Sent successfully");
     }
 
     public ResponseEntity<?> createUser(OnboardDto onboardDto) {
@@ -68,7 +80,7 @@ public class UserService {
         user.setLastName(onboardDto.getLastName());
         user.setEmail(onboardDto.getEmail());
         user.setPassword(bencoder.encode(onboardDto.getPassword()));
-        user.setRole(onboardDto.getRole()); // TODO: CHECK THIS LOGIC OUT
+        user.setRole(Role.CUSTOMER);
 
         String userId = generateRandomId();
 
@@ -86,6 +98,15 @@ public class UserService {
         userRepo.save(user);
 
         // Sending of Registration Email
+        String html = emailTemplateService.userWelcomeTemplate(user.getFirstName());
+
+        System.out.println("HTML template built, sending email");
+        resendEmailService.sendEmail(
+                user.getEmail(),
+                "Registeration Successful",
+                html
+        );
+        System.out.println("Email Sent successfully");
 
         return new ResponseEntity<>(user, HttpStatus.CREATED);
     }
@@ -330,6 +351,16 @@ public class UserService {
 
         // Clear OTP
         otpRepo.delete(otpRecord);
+
+        String html = emailTemplateService.passwordChangedTemplate(user.getFirstName());
+
+        System.out.println("HTML template built, sending email");
+        resendEmailService.sendEmail(
+                user.getEmail(),
+                "Password Updated Successfully !",
+                html
+        );
+        System.out.println("Email Sent successfully");
 
         return ResponseEntity.ok("Password updated successfully. You can now log in.");
     }

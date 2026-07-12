@@ -22,7 +22,6 @@ public class AuthController {
     @Autowired
     private UserService userService;
 
-    // TODO: ADD EMAIL INTEGRATION
     @PostMapping("/register")
     public ResponseEntity<?> createUser(@RequestBody OnboardDto onboardDto){
         return userService.createUser(onboardDto);
