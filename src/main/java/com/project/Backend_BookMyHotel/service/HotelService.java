@@ -3,14 +3,18 @@ package com.project.Backend_BookMyHotel.service;
 import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.dto.BranchSummaryDto;
 import com.project.Backend_BookMyHotel.dto.HotelDetailDto;
+import com.project.Backend_BookMyHotel.dto.HotelRequestDto;
 import com.project.Backend_BookMyHotel.dto.HotelSummary;
 import com.project.Backend_BookMyHotel.repository.HotelRepository;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 import java.util.NoSuchElementException;
@@ -22,21 +26,57 @@ public class HotelService {
     @Autowired
     private HotelRepository hotelRepo;
 
-    public ResponseEntity<Page<HotelSummary>> getAllHotels(int page, int size, String sortBy) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy).ascending());
-
+    public ResponseEntity<Page<HotelSummary>> getAllHotels(int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
         return ResponseEntity.ok(hotelRepo.findBy(pageable));
     }
 
-    /**
-     * Requirement 2: Full hotel details with branches included
-     */
-    public HotelDetailDto getHotelById(Long id) {
+    public ResponseEntity<?> getHotelById(Long id) {
         Hotel hotel = hotelRepo.findByBranchId(id).orElseThrow(() -> new NoSuchElementException("Hotel ID Not Found"));
-        return mapToHotelDetailDto(hotel);
+
+        if (hotel == null){
+            return new ResponseEntity<>("No Hotel Found with such id", HttpStatus.BAD_REQUEST);
+        }
+        return new ResponseEntity<>(mapToHotelDetailDto(hotel), HttpStatus.OK);
     }
 
-    // --- Helper Mapping Methods ---
+    @Transactional
+    public ResponseEntity<?> createHotel(HotelRequestDto request) {
+        Hotel hotel = new Hotel();
+        hotel.setName(request.getName());
+        hotel.setDescription(request.getDescription());
+        hotel.setStarRating(request.getStarRating());
+        hotel.setLogoUrl(request.getLogoUrl());
+
+        Hotel savedHotel = hotelRepo.save(hotel);
+        return new ResponseEntity<>(mapToHotelDetailDto(savedHotel),HttpStatus.OK);
+    }
+
+    @Transactional
+    public ResponseEntity<?> updateHotel(Long id, HotelRequestDto request) {
+        Hotel hotel = hotelRepo.findById(id)
+                .orElseThrow(() -> new NoSuchElementException("Cannot update. Hotel not found with ID: " + id));
+
+        hotel.setName(request.getName());
+        hotel.setDescription(request.getDescription());
+        hotel.setStarRating(request.getStarRating());
+        hotel.setLogoUrl(request.getLogoUrl());
+
+        Hotel updatedHotel = hotelRepo.save(hotel);
+        return new ResponseEntity<>(mapToHotelDetailDto(updatedHotel),HttpStatus.OK);
+    }
+
+
+    @Transactional
+    public ResponseEntity<?> deleteHotel(Long id) {
+        if (!hotelRepo.existsById(id)) {
+           return new ResponseEntity<>("Hotel ID doesn't exist", HttpStatus.BAD_REQUEST);
+        }
+
+        hotelRepo.deleteById(id);
+        return new ResponseEntity<>("Hotel Deleted Successfully !", HttpStatus.OK);
+    }
+
     private HotelDetailDto mapToHotelDetailDto(Hotel hotel) {
         HotelDetailDto dto = new HotelDetailDto();
         dto.setId(hotel.getId());
