@@ -17,5 +17,6 @@ public class BranchResponseDto {
     private String city;
     private String country;
     private String address;
+    private String currency;
     private LocalTime checkOutTime;
 }

@@ -16,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -104,6 +105,7 @@ public class BranchService {
         branch.setCity(request.getCity().trim());
         branch.setCountry(request.getCountry() != null ? request.getCountry().trim() : null);
         branch.setAddress(request.getAddress());
+        branch.setCurrency(request.getCurrency().trim().toUpperCase(Locale.ROOT));
         branch.setCheckInTime(request.getCheckInTime());
         branch.setCheckOutTime(request.getCheckOutTime());
 
@@ -139,6 +141,9 @@ public class BranchService {
         }
         if (request.getCountry() != null) {
             branch.setCountry(request.getCountry().trim());
+        }
+        if (request.getCurrency() != null && !request.getCurrency().isBlank()) {
+            branch.setCurrency(request.getCurrency().trim().toUpperCase(Locale.ROOT));
         }
 
         branch.setName(request.getName());
@@ -177,6 +182,7 @@ public class BranchService {
         dto.setCity(branch.getCity());
         dto.setCountry(branch.getCountry());
         dto.setAddress(branch.getAddress());
+        dto.setCurrency(branch.getCurrency());
         dto.setCheckOutTime(branch.getCheckOutTime());
 
         if (branch.getHotel() != null) {
@@ -193,6 +199,7 @@ public class BranchService {
                 .name(branch.getName())
                 .city(branch.getCity())
                 .address(branch.getAddress())
+                .currency(branch.getCurrency())
                 .build();
     }
 
@@ -204,7 +211,7 @@ public class BranchService {
                 .description(room.getDescription())
                 .maxOccupancy(room.getMaxOccupancy())
                 .pricePerNight(room.getPricePerNight())
-                .currency(room.getCurrency())
+                .currency(room.getBranch().getCurrency())
                 .amenities(room.getAmenities())
                 .images(room.getImages())
                 .publicIds(room.getPublicIds())

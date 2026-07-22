@@ -223,6 +223,9 @@ public class RoomService {
         RoomResponseDto dto = new RoomResponseDto();
         dto.setRoomNumber(room.getId());
         dto.setPricePerNight(room.getPricePerNight());
+        if (room.getBranch() != null) {
+            dto.setCurrency(room.getBranch().getCurrency());
+        }
         dto.setAmenities(room.getAmenities());
 
         if (room.getBranch() != null) {

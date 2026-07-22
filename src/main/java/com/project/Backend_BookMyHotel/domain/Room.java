@@ -37,8 +37,6 @@ public class Room {
     @Column(name = "price_per_night")
     private BigDecimal pricePerNight;
 
-    private String currency;
-
     // Using a simple String representation for JSONB natively supported by many modern dialects.
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "amenities", columnDefinition = "jsonb")

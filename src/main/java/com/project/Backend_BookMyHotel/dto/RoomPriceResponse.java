@@ -20,6 +20,7 @@ public class RoomPriceResponse {
     private long totalNights;
     private BigDecimal totalPrice;
     private String currency;
+    private String targetCurrency;
     private boolean isAvailable; // true only if EVERY night in range is available
     private List<NightlyPriceBreakdown> breakdown;
 

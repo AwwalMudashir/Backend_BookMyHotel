@@ -1,6 +1,5 @@
 package com.project.Backend_BookMyHotel.controller;
 
-import com.project.Backend_BookMyHotel.domain.RoomAvailability;
 import com.project.Backend_BookMyHotel.dto.AvailabilityCalendar;
 import com.project.Backend_BookMyHotel.dto.RoomPriceResponse;
 import com.project.Backend_BookMyHotel.dto.SetRoomAvailabilityRequest;
@@ -14,8 +13,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.List;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/availability")
@@ -28,13 +25,16 @@ public class AvailabilityController {
     public ResponseEntity<AvailabilityCalendar> getRoomCalendar(
             @PathVariable Long roomId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(defaultValue = "30") int days
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate
     ) {
         if (startDate == null) {
             startDate = LocalDate.now();
         }
+        if (endDate == null) {
+            endDate = startDate.plusDays(30);
+        }
 
-        AvailabilityCalendar calendar = availabilityService.generateAvailabilityCalendar(roomId, startDate, days);
+        AvailabilityCalendar calendar = availabilityService.generateAvailabilityCalendar(roomId, startDate, endDate);
         return ResponseEntity.ok(calendar);
     }
 
@@ -42,12 +42,12 @@ public class AvailabilityController {
     public ResponseEntity<RoomPriceResponse> getRoomPrice(
             @PathVariable Long roomId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkIn,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate checkOut,
+            @RequestParam(required = false) String targetCurrency
     ) {
-        RoomPriceResponse response = availabilityService.calculateTotalPrice(roomId, checkIn, checkOut);
+        RoomPriceResponse response = availabilityService.calculateTotalPrice(roomId, checkIn, checkOut, targetCurrency);
         return ResponseEntity.ok(response);
     }
-
     @PutMapping("/{roomId}/availability")
     @PreAuthorize("hasAuthority('HOTEL_MANAGER')")
     public ResponseEntity<String> setRoomAvailability(
@@ -58,15 +58,15 @@ public class AvailabilityController {
         return ResponseEntity.ok("Room availability and pricing updated successfully.");
     }
 
-    @PutMapping("/{roomId}/availability")
+    @PutMapping("/{roomId}/update-rate")
     @PreAuthorize("hasAuthority('HOTEL_MANAGER')")
     public ResponseEntity<String> updateDailyRate(
-            @RequestParam Long roomId,
+            @PathVariable Long roomId,
             @RequestParam LocalDate date,
             @RequestParam BigDecimal newRate,
             @RequestParam String reason
     ) {
         availabilityService.updateDailyRate(roomId,date,newRate,reason);
-        return ResponseEntity.ok("Room availability and pricing updated successfully.");
+        return ResponseEntity.ok("Daily Rate Updated successfully.");
     }
 }

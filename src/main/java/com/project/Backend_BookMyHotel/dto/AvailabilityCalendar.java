@@ -25,5 +25,6 @@ public class AvailabilityCalendar {
         private LocalDate date;
         private boolean isAvailable;
         private BigDecimal dailyRate;
+        private String currency;
     }
 }

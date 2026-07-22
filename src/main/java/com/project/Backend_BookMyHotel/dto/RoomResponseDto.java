@@ -16,6 +16,7 @@ public class RoomResponseDto {
     private Long branchId;
     private String branchName;
     private BigDecimal pricePerNight;
+    private String currency;
     private String roomTypeName;
     private Map<String, Object> amenities;
     private List<String> images;

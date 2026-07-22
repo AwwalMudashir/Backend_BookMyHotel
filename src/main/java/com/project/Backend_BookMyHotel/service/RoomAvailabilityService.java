@@ -35,12 +35,18 @@ public class RoomAvailabilityService {
     @Autowired
     private BookingRepository bookingRepository;
 
+    @Autowired
+    private ExchangeRateService exchangeRateService;
+
     @Transactional(readOnly = true)
-    public AvailabilityCalendar generateAvailabilityCalendar(Long roomId, LocalDate startDate, int days) {
+    public AvailabilityCalendar generateAvailabilityCalendar(Long roomId, LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("endDate must be on or after startDate.");
+        }
+
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new EntityNotFoundException("Room not found with id: " + roomId));
-
-        LocalDate endDate = startDate.plusDays(days);
+        String currency = room.getBranch().getCurrency();
 
         // 1. Fetch custom price or maintenance overrides from DB
         List<RoomAvailability> overrides = availabilityRepository
@@ -82,6 +88,7 @@ public class RoomAvailabilityService {
                     .date(date)
                     .isAvailable(isAvailable)
                     .dailyRate(dailyRate)
+                    .currency(currency)
                     .build());
 
             current = current.plusDays(1);
@@ -164,6 +171,12 @@ public class RoomAvailabilityService {
 
     @Transactional(readOnly = true)
     public RoomPriceResponse calculateTotalPrice(Long roomId, LocalDate checkIn, LocalDate checkOut) {
+        return calculateTotalPrice(roomId, checkIn, checkOut, null);
+    }
+
+    @Transactional(readOnly = true)
+    public RoomPriceResponse calculateTotalPrice(Long roomId, LocalDate checkIn, LocalDate checkOut,
+                                                 String targetCurrency) {
         // 1. Validation
         if (checkIn == null || checkOut == null || !checkOut.isAfter(checkIn)) {
             throw new IllegalArgumentException("checkOut date must be strictly after checkIn date or checkOut and checkIn cannot be null.");
@@ -171,6 +184,7 @@ public class RoomAvailabilityService {
 
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new EntityNotFoundException("Room not found with id: " + roomId));
+        String currency = room.getBranch().getCurrency();
 
         LocalDate lastNight = checkOut.minusDays(1);
 
@@ -228,6 +242,18 @@ public class RoomAvailabilityService {
         }
 
         long totalNights = ChronoUnit.DAYS.between(checkIn, checkOut);
+        String normalizedTargetCurrency = targetCurrency == null || targetCurrency.isBlank()
+            ? null : targetCurrency.trim().toUpperCase(Locale.ROOT);
+        if (normalizedTargetCurrency != null && !normalizedTargetCurrency.equalsIgnoreCase(currency)) {
+            totalPrice = exchangeRateService.convert(totalPrice, currency, normalizedTargetCurrency);
+            breakdown = breakdown.stream()
+                .map(nightly -> RoomPriceResponse.NightlyPriceBreakdown.builder()
+                    .date(nightly.getDate())
+                    .price(exchangeRateService.convert(nightly.getPrice(), currency, normalizedTargetCurrency))
+                    .isAvailable(nightly.isAvailable())
+                    .build())
+                .collect(Collectors.toList());
+        }
 
         return RoomPriceResponse.builder()
                 .roomId(roomId)
@@ -235,7 +261,8 @@ public class RoomAvailabilityService {
                 .checkOut(checkOut)
                 .totalNights(totalNights)
                 .totalPrice(totalPrice)
-                .currency(room.getCurrency() != null ? room.getCurrency() : "USD")
+                .currency(currency)
+                .targetCurrency(normalizedTargetCurrency)
                 .isAvailable(entireStayAvailable)
                 .breakdown(breakdown)
                 .build();

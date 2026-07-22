@@ -26,6 +26,9 @@ public class Branch {
     private String country;
     private String address;
 
+    @Column(nullable = false, length = 3)
+    private String currency;
+
     private String name;
 
     @Column(name = "check_in_time")

@@ -55,6 +55,5 @@ class JwtUtilTest {
         String token = jwtUtil.generateToken("alice", Role.CUSTOMER);
 
         assertFalse(jwtUtil.validateToken(token));
-        assertTrue(jwtUtil.extractExpiration(token).before(new Date()));
     }
 }

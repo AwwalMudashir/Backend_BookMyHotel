@@ -20,6 +20,7 @@ public class RoomSearchResult {
     private String roomType;
     private BigDecimal pricePerNight;
     private BigDecimal totalPrice;
+    private String currency;
     private Map<String, Object> amenities;
     private boolean available;
 }

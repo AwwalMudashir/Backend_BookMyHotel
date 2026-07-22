@@ -85,6 +85,7 @@ public class SearchService {
                     .roomType(room.getRoomType())
                     .pricePerNight(room.getPricePerNight())
                     .totalPrice(room.getPricePerNight().multiply(BigDecimal.valueOf(nights)))
+                    .currency(room.getBranch().getCurrency())
                     .amenities(room.getAmenities())
                     .available(true)
                     .build());

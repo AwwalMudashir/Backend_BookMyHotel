@@ -8,6 +8,8 @@ import com.project.Backend_BookMyHotel.dto.Role;
 import com.project.Backend_BookMyHotel.dto.UpdateProfileDto;
 import com.project.Backend_BookMyHotel.repository.OtpRepository;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
+import com.project.Backend_BookMyHotel.service.EmailTemplateService;
+import com.project.Backend_BookMyHotel.service.ResendEmailService;
 import com.project.Backend_BookMyHotel.service.UserService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -34,6 +36,12 @@ public class AuthServiceTest {
     @Mock
     private BCryptPasswordEncoder passwordEncoder;
 
+    @Mock
+    private EmailTemplateService emailTemplateService;
+
+    @Mock
+    private ResendEmailService resendEmailService;
+
     @InjectMocks
     private UserService userService;
 
@@ -51,7 +59,6 @@ public class AuthServiceTest {
 
         OnboardDto obj = new OnboardDto();
         obj.setPassword(user.getPassword());
-        obj.setRole(user.getRole());
         obj.setEmail(user.getEmail());
         obj.setFirstName(user.getFirstName());
         obj.setLastName(user.getLastName());
@@ -72,8 +79,6 @@ public class AuthServiceTest {
         obj.setPassword("Password123");
         obj.setFirstName("Jane");
         obj.setLastName("Doe");
-        obj.setRole(Role.CUSTOMER);
-
         Mockito.when(userRepo.existsByEmail(obj.getEmail())).thenReturn(true);
 
         ResponseEntity<?> response = userService.createUser(obj);
@@ -118,6 +123,8 @@ public class AuthServiceTest {
 
         Mockito.when(userRepo.existsByEmail(email)).thenReturn(true);
         Mockito.when(otpRepo.save(Mockito.any(OtpVerification.class))).thenReturn(savedOtp);
+        Mockito.when(emailTemplateService.otpTemplate(Mockito.eq(email), Mockito.anyString(), Mockito.eq(5)))
+            .thenReturn("otp-template");
 
         ResponseEntity<?> response = userService.forgotPassword(email);
 
