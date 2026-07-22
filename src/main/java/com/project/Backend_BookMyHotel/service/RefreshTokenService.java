@@ -25,22 +25,47 @@ public class RefreshTokenService {
 
     // Create a brand new Refresh Token for a user during Login
     @Transactional
-    public RefreshToken createRefreshToken(String userId) {
-        RefreshToken refreshToken = new RefreshToken();
-
-        // 1. Link it to the user
+    public RefreshToken createOrUpdateRefreshToken(String userId) {
         User user = userRepository.findByUserId(userId)
                 .orElseThrow(() -> new RuntimeException("User not found with id: " + userId));
 
+        String newToken = UUID.randomUUID().toString();
+        Instant expiryDate = Instant.now().plusMillis(refreshTokenDurationMs);
+
+        Optional<RefreshToken> existing = refreshTokenRepository.findByUser(user);
+
+        if (existing.isPresent()) {
+            RefreshToken refreshToken = existing.get();
+            refreshToken.setToken(newToken);
+            refreshToken.setExpiryDate(expiryDate);
+            return refreshTokenRepository.save(refreshToken);
+        }
+
+        RefreshToken refreshToken = new RefreshToken();
         refreshToken.setUser(user);
-
-        // 2. Set expiration date (Current time + 7 days)
-        refreshToken.setExpiryDate(Instant.now().plusMillis(refreshTokenDurationMs));
-
-        // 3. Generate a secure, completely random universal unique identifier string
-        refreshToken.setToken(UUID.randomUUID().toString());
-
+        refreshToken.setToken(newToken);
+        refreshToken.setExpiryDate(expiryDate);
         return refreshTokenRepository.save(refreshToken);
+    }
+
+    @Transactional
+    public RefreshToken rotateRefreshToken(String oldToken) {
+        RefreshToken existing = refreshTokenRepository.findByToken(oldToken)
+                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+
+        if (existing.getExpiryDate().isBefore(Instant.now())) {
+            refreshTokenRepository.delete(existing);
+            throw new RuntimeException("Refresh token was expired. Please sign in again.");
+        }
+
+        User user = existing.getUser();
+        String newToken = UUID.randomUUID().toString();
+        Instant newExpiry = Instant.now().plusMillis(refreshTokenDurationMs);
+
+        existing.setToken(newToken);
+        existing.setExpiryDate(newExpiry);
+
+        return refreshTokenRepository.save(existing);
     }
 
     // Verify that the claim ticket hasn't expired yet
@@ -53,6 +78,16 @@ public class RefreshTokenService {
         }
 
         return token;
+    }
+
+    @Transactional
+    public void deleteByToken(String token) {
+        refreshTokenRepository.deleteByToken(token);
+    }
+
+    @Transactional
+    public void deleteByUserId(Long userId) {
+        refreshTokenRepository.deleteByUserId(userId);
     }
 
     public Optional<RefreshToken> findByToken(String requestRefreshToken) {

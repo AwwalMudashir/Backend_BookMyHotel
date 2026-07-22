@@ -34,6 +34,8 @@ public class User {
     @Column(name = "last_name")
     private String lastName;
 
+    private String gender;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Role role;

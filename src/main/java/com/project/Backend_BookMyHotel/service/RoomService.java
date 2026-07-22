@@ -193,6 +193,7 @@ public class RoomService {
     @Transactional
     public ResponseEntity<?> deleteRoom(Long branchId, Long roomId) {
         Optional<Room> roomOpt = roomRepo.findById(roomId);
+
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Room not found.");
         }

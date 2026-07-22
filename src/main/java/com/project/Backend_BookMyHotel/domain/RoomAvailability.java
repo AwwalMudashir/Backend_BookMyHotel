@@ -24,6 +24,8 @@ public class RoomAvailability {
 
     private LocalDate date;
 
+    private String reason;
+
     @Column(name = "is_available")
     private Boolean isAvailable;
 

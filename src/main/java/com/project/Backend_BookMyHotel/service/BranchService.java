@@ -2,10 +2,12 @@ package com.project.Backend_BookMyHotel.service;
 
 import com.project.Backend_BookMyHotel.domain.Branch;
 import com.project.Backend_BookMyHotel.domain.Hotel;
-import com.project.Backend_BookMyHotel.dto.BranchRequestDto;
-import com.project.Backend_BookMyHotel.dto.BranchResponseDto;
+import com.project.Backend_BookMyHotel.domain.Review;
+import com.project.Backend_BookMyHotel.domain.Room;
+import com.project.Backend_BookMyHotel.dto.*;
 import com.project.Backend_BookMyHotel.repository.BranchRepository;
 import com.project.Backend_BookMyHotel.repository.HotelRepository;
+import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -14,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -45,7 +48,6 @@ public class BranchService {
         return ResponseEntity.ok(dtoList);
     }
 
-
     public ResponseEntity<?> getBranchById(Long branchId) {
         Optional<Branch> branchOpt = branchRepo.findById(branchId);
         if (branchOpt.isEmpty()) {
@@ -54,6 +56,33 @@ public class BranchService {
         }
 
         return ResponseEntity.ok(mapToBranchResponseDto(branchOpt.get()));
+    }
+
+    public List<BranchResponse> getBranchesByHotelId(Long hotelId) {
+        List<Branch> branches = branchRepo.findByHotelId(hotelId);
+        return branches.stream()
+                .map(this::toBranchResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<RoomResponse> getRoomsByBranchId(Long branchId) {
+        Branch branch = branchRepo.findByIdWithRooms(branchId)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Branch not found with id: " + branchId));
+
+        return branch.getRooms().stream()
+                .map(this::toRoomResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<ReviewResponse> getReviewsByBranchId(Long branchId) {
+        Branch branch = branchRepo.findByIdWithReviews(branchId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Branch not found with id: " + branchId));
+
+        return branch.getReviews().stream()
+                .map(this::toReviewResponse)
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -70,10 +99,12 @@ public class BranchService {
         }
 
         Branch branch = new Branch();
+        branch.setName(request.getName());
         branch.setHotel(hotelOpt.get());
         branch.setCity(request.getCity().trim());
         branch.setCountry(request.getCountry() != null ? request.getCountry().trim() : null);
         branch.setAddress(request.getAddress());
+        branch.setCheckInTime(request.getCheckInTime());
         branch.setCheckOutTime(request.getCheckOutTime());
 
         Branch savedBranch = branchRepo.save(branch);
@@ -109,13 +140,15 @@ public class BranchService {
         if (request.getCountry() != null) {
             branch.setCountry(request.getCountry().trim());
         }
+
+        branch.setName(request.getName());
         branch.setAddress(request.getAddress());
+        branch.setCheckInTime(request.getCheckInTime());
         branch.setCheckOutTime(request.getCheckOutTime());
 
         Branch updatedBranch = branchRepo.save(branch);
         return ResponseEntity.ok(mapToBranchResponseDto(updatedBranch));
     }
-
 
     @Transactional
     @PreAuthorize("hasRole('ADMIN')")
@@ -140,6 +173,7 @@ public class BranchService {
     private BranchResponseDto mapToBranchResponseDto(Branch branch) {
         BranchResponseDto dto = new BranchResponseDto();
         dto.setId(branch.getId());
+        dto.setName(branch.getName());
         dto.setCity(branch.getCity());
         dto.setCountry(branch.getCountry());
         dto.setAddress(branch.getAddress());
@@ -152,4 +186,43 @@ public class BranchService {
         return dto;
     }
 
+    private BranchResponse toBranchResponse(Branch branch) {
+        return BranchResponse.builder()
+                .id(branch.getId())
+                .hotelId(branch.getHotel().getId())
+                .name(branch.getName())
+                .city(branch.getCity())
+                .address(branch.getAddress())
+                .build();
+    }
+
+    private RoomResponse toRoomResponse(Room room) {
+        return RoomResponse.builder()
+                .id(room.getId())
+                .branchId(room.getBranch().getId())
+                .roomType(room.getRoomType())
+                .description(room.getDescription())
+                .maxOccupancy(room.getMaxOccupancy())
+                .pricePerNight(room.getPricePerNight())
+                .currency(room.getCurrency())
+                .amenities(room.getAmenities())
+                .images(room.getImages())
+                .publicIds(room.getPublicIds())
+                .build();
+    }
+
+    private ReviewResponse toReviewResponse(Review review) {
+        String name = review.getUser().getFirstName()
+                + " " + review.getUser().getLastName();
+        return ReviewResponse.builder()
+                .id(review.getId())
+                .branchId(review.getBranch().getId())
+                .userId(review.getUser().getId())
+                .reviewerName(name)
+                .rating(review.getRating())
+                .comment(review.getComment())
+                .isVerified(review.getIsVerified())
+                .createdAt(review.getCreatedAt())
+                .build();
+    }
 }

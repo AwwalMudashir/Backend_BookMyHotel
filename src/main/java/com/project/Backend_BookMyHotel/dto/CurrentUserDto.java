@@ -18,6 +18,7 @@ public class CurrentUserDto {
     private String email;
     private String firstName;
     private String lastName;
+    private String gender;
     private Role role;
     private List<Booking> bookings;
     private List<Review> reviews;

@@ -26,7 +26,7 @@ public class RoomController {
     }
 
     public ResponseEntity<?> allCategories(){
-        List<String> categories = new ArrayList<>(Arrays.asList("basic", "standard", "suite"));
+        List<String> categories = new ArrayList<>(Arrays.asList("Standard", "Deluxe", "Suite", "Presidential Suite"));
         return ResponseEntity.ok(categories);
     }
 

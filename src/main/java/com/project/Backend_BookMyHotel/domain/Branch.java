@@ -26,6 +26,11 @@ public class Branch {
     private String country;
     private String address;
 
+    private String name;
+
+    @Column(name = "check_in_time")
+    private LocalTime checkInTime;
+
     @Column(name = "check_out_time")
     private LocalTime checkOutTime;
 

@@ -10,8 +10,10 @@ import java.time.LocalTime;
 @AllArgsConstructor
 @NoArgsConstructor
 public class BranchRequestDto {
+    private String name;
     private String city;
     private String country;
     private String address;
+    private LocalTime checkInTime;
     private LocalTime checkOutTime;
 }

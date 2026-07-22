@@ -27,7 +27,9 @@ public class HotelService {
     private HotelRepository hotelRepo;
 
     public ResponseEntity<Page<HotelSummary>> getAllHotels(int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+        int adjustedPage = page > 0 ? page - 1 : 0;
+
+        Pageable pageable = PageRequest.of(adjustedPage, size);
         return ResponseEntity.ok(hotelRepo.findBy(pageable));
     }
 

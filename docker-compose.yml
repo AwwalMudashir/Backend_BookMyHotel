@@ -1,20 +1,6 @@
 services:
-
-  postgres:
-    image: postgres:15-alpine
-    container_name: bookmyhotel_postgres
-    environment:
-      POSTGRES_DB: book_my_hotel
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: Mohawwal@15
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    restart: unless-stopped
-
   redis:
-    image: redis:7-alpine
+    image: redis:latest
     container_name: bookmyhotel_redis
     ports:
       - "6379:6379"

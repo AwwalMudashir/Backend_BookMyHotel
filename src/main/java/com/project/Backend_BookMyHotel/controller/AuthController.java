@@ -1,8 +1,10 @@
 package com.project.Backend_BookMyHotel.controller;
 
 import com.project.Backend_BookMyHotel.domain.OtpVerification;
+import com.project.Backend_BookMyHotel.domain.RefreshToken;
 import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.*;
+import com.project.Backend_BookMyHotel.repository.RefreshTokenRepository;
 import com.project.Backend_BookMyHotel.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -13,6 +15,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Optional;
 
 @RestController
@@ -21,6 +24,9 @@ public class AuthController {
 
     @Autowired
     private UserService userService;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepo;
 
     @PostMapping("/register")
     public ResponseEntity<?> createUser(@RequestBody OnboardDto onboardDto){
@@ -53,18 +59,34 @@ public class AuthController {
     }
 
     @PostMapping("/verify-otp")
-    public ResponseEntity<?> verifyOtp(Authentication authentication, @RequestBody VerifyOtpDto verifyDto) {
+    public ResponseEntity<?> verifyOtp(@RequestBody VerifyOtpDto verifyDto) {
         return userService.verifyOtp(verifyDto);
     }
 
+    @PostMapping("/send-otp")
+    public ResponseEntity<?> sendOtp(@RequestParam String userEmail) {
+        return userService.sendOtp(userEmail);
+    }
+
     @PostMapping("/resend-otp")
-    public ResponseEntity<?> resendOtp(Authentication authentication,@RequestParam String userEmail) {
-       return userService.resendOtp(authentication, userEmail);
+    public ResponseEntity<?> resendOtp(@RequestParam String userEmail) {
+       return userService.resendOtp(userEmail);
     }
 
     @PostMapping("/reset-password")
     public ResponseEntity<?> resetPassword(Authentication authentication,@RequestBody ResetPasswordDto resetDto) {
-       return userService.resetPassword(resetDto);
+       return userService.resetPassword(authentication,resetDto);
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestParam String refreshToken) {
+        return userService.logout(refreshToken);
+    }
+
+    @GetMapping("/refreshes")
+    public List<RefreshToken> allrefreshTokens(){
+        return refreshTokenRepo.findAll();
+    }
+
 
 }

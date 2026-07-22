@@ -5,8 +5,10 @@ import com.project.Backend_BookMyHotel.domain.RefreshToken;
 import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.*;
 import com.project.Backend_BookMyHotel.repository.OtpRepository;
+import com.project.Backend_BookMyHotel.repository.RefreshTokenRepository;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
 import com.project.Backend_BookMyHotel.util.JwtUtil;
+import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -36,6 +38,9 @@ public class UserService {
 
     @Autowired
     private RefreshTokenService refreshTokenService;
+
+    @Autowired
+    private RefreshTokenRepository refreshTokenRepo;
 
     @Autowired
     private EmailTemplateService emailTemplateService;
@@ -134,7 +139,7 @@ public class UserService {
 
         // Generate JWT token
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
-        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user.getUserId());
+        RefreshToken refreshToken = refreshTokenService.createOrUpdateRefreshToken(user.getUserId());
 
 
         // Return JWT response
@@ -153,14 +158,17 @@ public class UserService {
     public ResponseEntity<?> refreshToken(TokenRefreshRequest request) {
         String requestRefreshToken = request.getRefreshToken();
 
-        return refreshTokenService.findByToken(requestRefreshToken)
-                .map(refreshTokenService::verifyExpiration)
-                .map(RefreshToken::getUser)
-                .map(user -> {
-                    String token = jwtUtil.generateToken(user.getEmail(), user.getRole());
-                    return ResponseEntity.ok(new TokenRefreshResponse(token, requestRefreshToken));
-                })
-                .orElseThrow(() -> new RuntimeException("Refresh token is not in database or expired!"));
+        RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
+                .orElseThrow(() -> new RuntimeException("Refresh token is not in database"));
+
+        refreshTokenService.verifyExpiration(refreshToken);
+
+        User user = refreshToken.getUser();
+        String newAccessToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
+
+        RefreshToken rotated = refreshTokenService.rotateRefreshToken(requestRefreshToken);
+
+        return ResponseEntity.ok(new TokenRefreshResponse(newAccessToken, rotated.getToken()));
     }
 
     public ResponseEntity<?> getCurrentUser(Authentication authentication) {
@@ -180,6 +188,7 @@ public class UserService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
+                user.getGender(),
                 user.getRole(),
                 user.getBookings(),
                 user.getReviews()
@@ -210,6 +219,10 @@ public class UserService {
             user.setLastName(updateDto.getLastName());
         }
 
+        if (updateDto.getGender() != null) {
+            user.setGender(updateDto.getGender());
+        }
+
         // 4. Save the updated user back to the database
         User updatedUser = userRepo.save(user);
 
@@ -219,6 +232,7 @@ public class UserService {
                 updatedUser.getEmail(),
                 updatedUser.getFirstName(),
                 updatedUser.getLastName(),
+                updatedUser.getGender(),
                 updatedUser.getRole(),
                 updatedUser.getBookings(),
                 updatedUser.getReviews()
@@ -227,20 +241,7 @@ public class UserService {
         return ResponseEntity.ok(responseDto);
     }
 
-    public ResponseEntity<?> resendOtp(Authentication authentication, String userEmail) {
-        // 1. Validation check for Authentication
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
-        }
-
-        // 2. Fetch the existing user from the database
-        String email = authentication.getName();
-        User user = userRepo.findByEmail(email);
-
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
-        }
-
+    public ResponseEntity<?> resendOtp(String userEmail) {
         Optional<OtpVerification> existingOtpOpt = otpRepo.findByEmail(userEmail);
 
         if (existingOtpOpt.isEmpty()) {
@@ -261,6 +262,20 @@ public class UserService {
         Map<String, Object> response = new HashMap<>();
         response.put("message", "A new OTP has been sent.");
         response.put("entryId", otpRecord.getId()); // Maintain or return the entry ID
+
+        return ResponseEntity.ok(response);
+    }
+
+    public ResponseEntity<?> sendOtp(String userEmail) {
+        String otp = generateSixDigitOtp();
+        OtpVerification otpRecord = new OtpVerification(userEmail, otp, LocalDateTime.now().plusMinutes(5));
+        OtpVerification savedOtp = otpRepo.save(otpRecord);
+
+        sendOtpEmail(userEmail, otp);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("message", "A new OTP has been sent.");
+        response.put("entryId", otpRecord.getId()); // return the entry ID
 
         return ResponseEntity.ok(response);
     }
@@ -325,22 +340,14 @@ public class UserService {
         return new ResponseEntity<>(resp,HttpStatus.OK);
     }
 
-    public ResponseEntity<?> resetPassword(ResetPasswordDto resetDto) {
-        Optional<OtpVerification> otpRecordOpt = otpRepo.findByResetToken(resetDto.getToken());
-
-        if (otpRecordOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("Invalid or expired reset token.");
+    public ResponseEntity<?> resetPassword(Authentication authentication , ResetPasswordDto resetDto) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
         }
 
-        OtpVerification otpRecord = otpRecordOpt.get();
+        String email = authentication.getName();
+        User user = userRepo.findByEmail(email);
 
-        if (otpRecord.isExpired()) {
-            otpRepo.delete(otpRecord);
-            return ResponseEntity.status(HttpStatus.GONE).body("Reset session expired.");
-        }
-
-        // Fetch the actual user
-        User user = userRepo.findByEmail(otpRecord.getEmail());
         if (user == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
         }
@@ -348,9 +355,6 @@ public class UserService {
         String encryptedPassword = bencoder.encode(resetDto.getNewPassword());
         user.setPassword(encryptedPassword);
         userRepo.save(user);
-
-        // Clear OTP
-        otpRepo.delete(otpRecord);
 
         String html = emailTemplateService.passwordChangedTemplate(user.getFirstName());
 
@@ -362,6 +366,17 @@ public class UserService {
         );
         System.out.println("Email Sent successfully");
 
-        return ResponseEntity.ok("Password updated successfully. You can now log in.");
+        return ResponseEntity.ok("Password updated successfully.");
+    }
+
+    @Transactional
+    public ResponseEntity<?> logout(String refreshToken) {
+        if (refreshToken == null || refreshToken.trim().isEmpty()) {
+            return ResponseEntity.badRequest().body("Refresh token is required");
+        }
+
+        refreshTokenService.deleteByToken(refreshToken);
+
+        return ResponseEntity.ok("Success: User has been logged out successfully. Refresh token revoked.");
     }
 }
