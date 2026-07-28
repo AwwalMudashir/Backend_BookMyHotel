@@ -58,7 +58,7 @@ public class AppConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(custom -> custom.disable())
                 .authorizeHttpRequests(registry -> registry
-                        .requestMatchers("/auth/register", "/auth/login","/auth/refresh","/auth/forgot-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/hotel/all","/hotel","/hotel/{id}","/hotel/{id}/branches","/auth/logout","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login","/auth/refresh","/auth/forgot-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/hotel/all","/hotel","/hotel/{id}","/hotel/{id}/branches","/auth/logout","/search/rooms","/payments/webhook","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(httpBasic -> {})

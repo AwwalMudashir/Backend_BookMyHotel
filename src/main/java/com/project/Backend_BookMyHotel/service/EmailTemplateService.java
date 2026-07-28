@@ -2,6 +2,12 @@ package com.project.Backend_BookMyHotel.service;
 
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+
 @Service
 public class EmailTemplateService {
 
@@ -130,23 +136,30 @@ public class EmailTemplateService {
             String hotelName,
             String branchLocation,
             String roomType,
-            String checkInDate,
-            String checkOutDate,
-            String totalPrice
+            LocalDate checkInDate,
+            LocalDate checkOutDate,
+            BigDecimal totalPrice,
+            String currency
     ) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy");
+        String formattedCheckIn  = checkInDate.format(formatter);
+        String formattedCheckOut = checkOutDate.format(formatter);
+        long nights = ChronoUnit.DAYS.between(checkInDate, checkOutDate);
+        String formattedPrice = currency + " " + totalPrice.setScale(2, RoundingMode.HALF_UP).toPlainString();
+
         return """
 <div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#f4f6f8; color:#111827;">
     <div style="max-width:600px; margin:auto; background:#ffffff; padding:32px; border-radius:12px; box-shadow:0 4px 25px rgba(17, 24, 39, 0.05); border-top: 8px solid #329775;">
-        
+
         <!-- Header -->
         <div style="margin-bottom:28px;">
             <span style="color:#329775; font-size:12px; letter-spacing:0.05em; text-transform:uppercase; font-weight:700;">Reservation Confirmed</span>
-            <h1 style="margin:4px 0 0; font-size:26px; color:#111827; font-weight:800;">Pack Your Bags! 🏨</h1>
+            <h1 style="margin:4px 0 0; font-size:26px; color:#111827; font-weight:800;">Pack Your Bags!</h1>
         </div>
 
         <p style="font-size:15px; color:#374151;">Hello %s,</p>
         <p style="font-size:14px; color:#4b5563; line-height:1.5; margin-bottom:24px;">
-            Your booking request has been systematically processed and confirmed by our channel servers. Below is your detailed structural itinerary receipt:
+            Your booking has been confirmed. Below is your full reservation summary — save this email for your records.
         </p>
 
         <!-- Reference Summary Box -->
@@ -154,7 +167,7 @@ public class EmailTemplateService {
             <table width="100%%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
                     <td style="font-size:13px; color:#9ca3af;">BOOKING REFERENCE</td>
-                    <td align="right" style="font-size:13px; color:#9ca3af;">TOTAL CHARGE</td>
+                    <td align="right" style="font-size:13px; color:#9ca3af;">TOTAL CHARGED</td>
                 </tr>
                 <tr>
                     <td style="font-size:20px; font-weight:800; color:#f9f871; font-family:monospace;">%s</td>
@@ -163,38 +176,42 @@ public class EmailTemplateService {
             </table>
         </div>
 
-        <!-- Hotel & Room Specifics -->
-        <h3 style="font-size:14px; color:#111827; text-transform:uppercase; letter-spacing:0.03em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Accommodation Metrics</h3>
-        
-        <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:24px; font-size:14px; line-height:1.8;">
+        <!-- Accommodation Details -->
+        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Accommodation Details</h3>
+
+        <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:24px; font-size:14px; line-height:1.9;">
             <tr>
-                <td style="padding:4px 0; color:#6b7280;" width="35%%">Hotel Brand:</td>
+                <td style="padding:4px 0; color:#6b7280;" width="38%%">Hotel</td>
                 <td style="padding:4px 0; color:#111827; font-weight:600;">%s</td>
             </tr>
             <tr>
-                <td style="padding:4px 0; color:#6b7280;">Branch Location:</td>
+                <td style="padding:4px 0; color:#6b7280;">Branch</td>
                 <td style="padding:4px 0; color:#111827;">%s</td>
             </tr>
             <tr>
-                <td style="padding:4px 0; color:#6b7280;">Selected Tier:</td>
+                <td style="padding:4px 0; color:#6b7280;">Room Type</td>
                 <td style="padding:4px 0; color:#329775; font-weight:600; text-transform:capitalize;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Duration</td>
+                <td style="padding:4px 0; color:#111827; font-weight:600;">%d night%s</td>
             </tr>
         </table>
 
-        <!-- Check-In / Check-Out Schedule -->
-        <h3 style="font-size:14px; color:#111827; text-transform:uppercase; letter-spacing:0.03em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Stay Duration Timeline</h3>
-        
+        <!-- Stay Timeline -->
+        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Stay Duration</h3>
+
         <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:16px; margin-bottom:28px;">
             <table width="100%%" border="0" cellspacing="0" cellpadding="0">
                 <tr>
-                    <td width="48%%" style="vertical-align: top;">
-                        <span style="font-size:11px; color:#6b7280; text-transform:uppercase;">📅 CHECK-IN</span><br/>
+                    <td width="48%%" style="vertical-align:top;">
+                        <span style="font-size:11px; color:#6b7280; text-transform:uppercase;">📅 Check-in</span><br/>
                         <strong style="font-size:15px; color:#111827;">%s</strong><br/>
                         <span style="font-size:12px; color:#6b7280;">After 3:00 PM</span>
                     </td>
                     <td width="4%%" style="border-left:1px solid #e5e7eb;">&nbsp;</td>
-                    <td width="48%%" style="vertical-align: top; padding-left:10px;">
-                        <span style="font-size:11px; color:#6b7280; text-transform:uppercase;">📅 CHECK-OUT</span><br/>
+                    <td width="48%%" style="vertical-align:top; padding-left:10px;">
+                        <span style="font-size:11px; color:#6b7280; text-transform:uppercase;">📅 Check-out</span><br/>
                         <strong style="font-size:15px; color:#111827;">%s</strong><br/>
                         <span style="font-size:12px; color:#6b7280;">Before 11:00 AM</span>
                     </td>
@@ -202,25 +219,26 @@ public class EmailTemplateService {
             </table>
         </div>
 
-        <!-- Call to Action / Support Footer -->
+        <!-- CTA -->
         <div style="background:#f0fbf7; border:1px solid #a3d8c5; border-radius:8px; padding:16px; text-align:center;">
             <p style="margin:0; font-size:13px; color:#236952; line-height:1.4;">
-                Need to modify your reservation timelines, add specific amenities, or check special cancellation rules? Log into your dashboard console instantly.
+                Need to modify your reservation or view your full booking details? Head to your dashboard at any time.
             </p>
-            <a href="/dashboard/reservations" style="display:inline-block; margin-top:12px; color:#329775; text-decoration:none; font-weight:700; font-size:14px;">Modify Reservation →</a>
+            <a href="/my-bookings" style="display:inline-block; margin-top:12px; color:#329775; text-decoration:none; font-weight:700; font-size:14px;">View My Booking →</a>
         </div>
-        
+
     </div>
 </div>
 """.formatted(
                 escapeHtml(guestName),
                 escapeHtml(bookingRef),
-                escapeHtml(totalPrice),
+                formattedPrice,
                 escapeHtml(hotelName),
                 escapeHtml(branchLocation),
                 escapeHtml(roomType),
-                escapeHtml(checkInDate),
-                escapeHtml(checkOutDate)
+                nights, nights == 1 ? "" : "s",
+                formattedCheckIn,
+                formattedCheckOut
         );
     }
 
@@ -257,42 +275,203 @@ public class EmailTemplateService {
 """.formatted(escName, escEmail, escMessage, escEmail, escEmail);
     }
 
-    public String adminWelcomeTemplate(String username) {
+    public String adminWelcomeTemplate(
+            String adminName,
+            String email,
+            String temporaryPassword
+    ) {
         return """
-<div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#111827; color:#ffffff;">
-    <div style="max-width:600px; margin:auto; padding:32px; border-radius:12px; background:#1f2937; border-left: 6px solid #329775; box-shadow: 0 10px 30px rgba(0,0,0,0.25);">
-        
-        <div style="display:inline-block; background:#329775; color:#ffffff; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; margin-bottom:20px;">
-            Management Portal
+<div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#f4f6f8; color:#111827;">
+    <div style="max-width:600px; margin:auto; background:#ffffff; padding:32px; border-radius:12px; box-shadow:0 4px 25px rgba(17, 24, 39, 0.05); border-top: 8px solid #111827;">
+
+        <!-- Header -->
+        <div style="margin-bottom:28px;">
+            <span style="color:#6b7280; font-size:12px; letter-spacing:0.05em; text-transform:uppercase; font-weight:700;">System Administrator</span>
+            <h1 style="margin:4px 0 0; font-size:26px; color:#111827; font-weight:800;">Admin access granted.</h1>
         </div>
-        
-        <h2 style="color:#ffffff; margin:0 0 16px 0; font-size:26px; font-weight:700;">Welcome to Book My Hotel</h2>
 
-        <p style="font-size:16px; color:#e5e7eb; line-height:1.5;">Hello <span style="color:#f9f871; font-weight:700;">%s</span>,</p>
+        <p style="font-size:15px; color:#374151;">Hello %s,</p>
+        <p style="font-size:14px; color:#4b5563; line-height:1.5; margin-bottom:24px;">
+            A system administrator account has been provisioned for you on Book My Hotel. This account carries full platform access. Treat these credentials with the highest level of security.
+        </p>
 
-        <p style="font-size:15px; color:#9ca3af; margin-bottom:20px;">Your profile has been granted <strong style="color:#ffffff;">Admin Access</strong>. You now possess permissions to oversee platform operations:</p>
+        <!-- Credentials Box -->
+        <div style="background:#1f2937; color:#ffffff; padding:20px 24px; border-radius:8px; margin-bottom:24px;">
+            <p style="margin:0 0 14px; font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em;">Your Login Credentials</p>
+            <table width="100%%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                    <td style="font-size:13px; color:#9ca3af; padding-bottom:6px;" width="35%%">Email</td>
+                    <td style="font-size:14px; color:#ffffff; font-weight:600; padding-bottom:6px;">%s</td>
+                </tr>
+                <tr>
+                    <td style="font-size:13px; color:#9ca3af;">Temp Password</td>
+                    <td style="font-size:18px; font-weight:800; color:#f9f871; font-family:monospace; letter-spacing:2px;">%s</td>
+                </tr>
+            </table>
+        </div>
 
-        <ul style="padding-left:20px; color:#e5e7eb; font-size:15px; line-height:1.8; margin-bottom:24px;">
-            <li>Add, edit, or remove hotel listings and unique regional branches</li>
-            <li>Manage calendar availability, occupancy controls, and room daily rates</li>
-            <li>Access the Admin Analytics Dashboard (track room revenue and booked room nights)</li>
-        </ul>
-
-        <div style="background:#111827; padding:16px; border-radius:8px; border:1px solid #374151; margin-bottom:24px; text-align:center;">
-            <p style="margin:0; font-size:15px; color:#9ca3af;">
-                Access your console securely at: <a href="/admin" style="color:#329775; text-decoration:none; font-weight:700; font-size:16px;">/admin</a>
+        <!-- High Security Warning -->
+        <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:8px; padding:14px 16px; margin-bottom:24px;">
+            <span style="font-size:18px;">🔒</span>
+            <p style="margin:6px 0 0; font-size:13px; color:#991b1b; line-height:1.5;">
+                <strong>Critical security notice:</strong> This account has unrestricted access to all platform data, hotels, reservations, and user accounts. Change your password immediately after your first login and never share these credentials.
             </p>
         </div>
 
-        <hr style="margin:20px 0; border:0; border-top:1px solid #374151;"/>
+        <!-- Access Level -->
+        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Account Privileges</h3>
 
-        <p style="font-size:12px; color:#9ca3af; margin:0;">
-            🔒 Security Notice: Keep your login credentials confidential. All administrative platform changes are securely audited.
+        <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:24px; font-size:14px; line-height:1.9;">
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;" width="38%%">Role</td>
+                <td style="padding:4px 0; color:#111827; font-weight:600;">System Administrator</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Scope</td>
+                <td style="padding:4px 0; color:#111827;">Full platform — all hotels, branches, rooms</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Access Level</td>
+                <td style="padding:4px 0; color:#991b1b; font-weight:600;">Unrestricted</td>
+            </tr>
+        </table>
+
+        <!-- What Admin Can Do -->
+        <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:28px;">
+            <h3 style="margin:0 0 10px; font-size:14px; color:#111827; font-weight:700;">Your admin capabilities:</h3>
+            <ul style="margin:0; padding-left:20px; font-size:13px; color:#4b5563; line-height:1.9;">
+                <li>Add, edit and remove hotels, branches and rooms</li>
+                <li>Create and manage hotel manager accounts</li>
+                <li>View and manage all reservations across all hotels</li>
+                <li>Access full analytics — room nights, revenue, ADR per hotel</li>
+                <li>Create and manage platform-wide promotional campaigns</li>
+                <li>Moderate and remove guest reviews</li>
+                <li>View all guest accounts and booking history</li>
+            </ul>
+        </div>
+
+        <!-- CTA -->
+        <div style="text-align:center; margin-bottom:28px;">
+            <a href="/admin/dashboard" style="display:inline-block; background:#111827; color:#ffffff; padding:13px 36px; border-radius:6px; font-size:15px; font-weight:700; text-decoration:none;">
+                Access Admin Panel
+            </a>
+        </div>
+
+        <hr style="margin:24px 0; border:0; border-top:1px solid #e5e7eb;"/>
+
+        <p style="font-size:12px; color:#6b7280; text-align:center; margin:0; line-height:1.6;">
+            This email was generated by the Book My Hotel platform system.<br/>
+            If you did not expect this, contact your system administrator immediately.
         </p>
 
     </div>
 </div>
-""".formatted(username);
+""".formatted(
+                escapeHtml(adminName),
+                escapeHtml(email),
+                escapeHtml(temporaryPassword)
+        );
+    }
+
+    public String hotelManagerWelcomeTemplate(
+            String managerName,
+            String email,
+            String temporaryPassword,
+            String hotelName
+    ) {
+        return """
+<div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#f4f6f8; color:#111827;">
+    <div style="max-width:600px; margin:auto; background:#ffffff; padding:32px; border-radius:12px; box-shadow:0 4px 25px rgba(17, 24, 39, 0.05); border-top: 8px solid #329775;">
+
+        <!-- Header -->
+        <div style="margin-bottom:28px;">
+            <span style="color:#329775; font-size:12px; letter-spacing:0.05em; text-transform:uppercase; font-weight:700;">Hotel Manager Account</span>
+            <h1 style="margin:4px 0 0; font-size:26px; color:#111827; font-weight:800;">You have been onboarded.</h1>
+        </div>
+
+        <p style="font-size:15px; color:#374151;">Hello %s,</p>
+        <p style="font-size:14px; color:#4b5563; line-height:1.5; margin-bottom:24px;">
+            A manager account has been created for you on Book My Hotel. You have been assigned to manage
+            <strong style="color:#111827;">%s</strong>. Use the credentials below to log in and access your hotel dashboard.
+        </p>
+
+        <!-- Credentials Box -->
+        <div style="background:#1f2937; color:#ffffff; padding:20px 24px; border-radius:8px; margin-bottom:24px;">
+            <p style="margin:0 0 14px; font-size:12px; color:#9ca3af; text-transform:uppercase; letter-spacing:0.05em;">Your Login Credentials</p>
+            <table width="100%%" border="0" cellspacing="0" cellpadding="0">
+                <tr>
+                    <td style="font-size:13px; color:#9ca3af; padding-bottom:6px;" width="35%%">Email</td>
+                    <td style="font-size:14px; color:#ffffff; font-weight:600; padding-bottom:6px;">%s</td>
+                </tr>
+                <tr>
+                    <td style="font-size:13px; color:#9ca3af;">Temp Password</td>
+                    <td style="font-size:18px; font-weight:800; color:#f9f871; font-family:monospace; letter-spacing:2px;">%s</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Security Notice -->
+        <div style="background:#fff8f0; border:1px solid #f5d9b0; border-radius:8px; padding:14px 16px; margin-bottom:24px; display:flex; gap:10px;">
+            <span style="font-size:18px;">⚠️</span>
+            <p style="margin:0; font-size:13px; color:#92400e; line-height:1.5;">
+                This is a temporary password. You will be prompted to change it on your first login. Do not share this email with anyone.
+            </p>
+        </div>
+
+        <!-- What They Manage -->
+        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Your Assigned Property</h3>
+
+        <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:24px; font-size:14px; line-height:1.9;">
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;" width="38%%">Hotel</td>
+                <td style="padding:4px 0; color:#111827; font-weight:600;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Role</td>
+                <td style="padding:4px 0; color:#329775; font-weight:600;">Hotel Manager</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Access Level</td>
+                <td style="padding:4px 0; color:#111827;">Rates, availability, services, reservations &amp; reviews</td>
+            </tr>
+        </table>
+
+        <!-- What You Can Do -->
+        <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:20px; margin-bottom:28px;">
+            <h3 style="margin:0 0 10px; font-size:14px; color:#111827; font-weight:700;">What you can do from your dashboard:</h3>
+            <ul style="margin:0; padding-left:20px; font-size:13px; color:#4b5563; line-height:1.9;">
+                <li>Update your hotel's property description and branch details</li>
+                <li>Set and manage room rates and availability calendars</li>
+                <li>Add and manage ancillary services (spa, car hire, tours, restaurant)</li>
+                <li>Create promotional discount opportunities for guests</li>
+                <li>View and track all reservations made at your hotel</li>
+                <li>Monitor guest reviews submitted for your branches</li>
+            </ul>
+        </div>
+
+        <!-- CTA -->
+        <div style="text-align:center; margin-bottom:28px;">
+            <a href="/manager/dashboard" style="display:inline-block; background:#329775; color:#ffffff; padding:13px 36px; border-radius:6px; font-size:15px; font-weight:700; text-decoration:none;">
+                Access My Dashboard
+            </a>
+        </div>
+
+        <hr style="margin:24px 0; border:0; border-top:1px solid #e5e7eb;"/>
+
+        <p style="font-size:12px; color:#6b7280; text-align:center; margin:0; line-height:1.6;">
+            If you did not expect this email or believe this account was created in error,<br/>
+            please contact the platform administrator immediately.
+        </p>
+
+    </div>
+</div>
+""".formatted(
+                escapeHtml(managerName),
+                escapeHtml(hotelName),
+                escapeHtml(email),
+                escapeHtml(temporaryPassword),
+                escapeHtml(hotelName)
+        );
     }
 
     private String escapeHtml(String input) {

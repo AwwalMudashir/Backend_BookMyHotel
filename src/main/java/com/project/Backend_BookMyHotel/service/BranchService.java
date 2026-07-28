@@ -7,6 +7,7 @@ import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.*;
 import com.project.Backend_BookMyHotel.repository.BranchRepository;
 import com.project.Backend_BookMyHotel.repository.HotelRepository;
+import com.project.Backend_BookMyHotel.repository.ServiceRepository;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,9 @@ public class BranchService {
 
     @Autowired
     private HotelRepository hotelRepo;
+
+    @Autowired
+    private ServiceRepository serviceRepo;
 
     public ResponseEntity<?> getBranches() {
         List<Branch> branches = branchRepo.findAll();
@@ -83,6 +87,16 @@ public class BranchService {
 
         return branch.getReviews().stream()
                 .map(this::toReviewResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<ServiceResponse> getServicesByBranchId(Long branchId) {
+        Branch branch = branchRepo.findByIdWithServices(branchId)
+                .orElseThrow(() -> new EntityNotFoundException(
+                        "Branch not found with id: " + branchId));
+
+        return branch.getServices().stream()
+                .map(this::toServiceResponse)
                 .collect(Collectors.toList());
     }
 
@@ -230,6 +244,18 @@ public class BranchService {
                 .comment(review.getComment())
                 .isVerified(review.getIsVerified())
                 .createdAt(review.getCreatedAt())
+                .build();
+    }
+
+    // Fully-qualified to avoid clashing with the org.springframework.stereotype.Service import above
+    private ServiceResponse toServiceResponse(com.project.Backend_BookMyHotel.domain.Service service) {
+        return ServiceResponse.builder()
+                .id(service.getId())
+                .branchId(service.getBranch().getId())
+                .name(service.getName())
+                .description(service.getDescription())
+                .price(service.getPrice())
+                .serviceType(service.getServiceType())
                 .build();
     }
 }

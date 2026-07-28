@@ -48,4 +48,23 @@ public class User {
 
     @OneToMany(mappedBy = "user", cascade = CascadeType.ALL)
     private List<Review> reviews;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "managed_hotel_id", nullable = true)
+    private Hotel managedHotel;
+
+    @Column(name = "is_active")
+    private Character isActive;
+
+    public boolean isAdmin() {
+        return this.role == Role.ADMIN;
+    }
+
+    public boolean isHotelManager() {
+        return this.role == Role.HOTEL_MANAGER;
+    }
+
+    public boolean isCustomer() {
+        return this.role == Role.CUSTOMER;
+    }
 }

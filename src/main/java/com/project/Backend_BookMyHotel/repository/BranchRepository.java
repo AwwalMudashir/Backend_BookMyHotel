@@ -24,4 +24,16 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
     @Query("SELECT b FROM Branch b LEFT JOIN FETCH b.reviews WHERE b.id = :id")
     Optional<Branch> findByIdWithReviews(@Param("id") Long id);
 
+    // Fetch branch with services eagerly
+    @Query("SELECT b FROM Branch b LEFT JOIN FETCH b.services WHERE b.id = :id")
+    Optional<Branch> findByIdWithServices(@Param("id") Long id);
+
+    // Every distinct currency in play for a search's branches, so a currency-aware price filter
+    // knows which currencies to convert minPrice/maxPrice into. city/country are optional filters,
+    // matching how the search specification itself narrows branches.
+    @Query("SELECT DISTINCT b.currency FROM Branch b " +
+            "WHERE (:city IS NULL OR LOWER(b.city) = LOWER(:city)) " +
+            "AND (:country IS NULL OR LOWER(b.country) = LOWER(:country))")
+    List<String> findDistinctCurrencies(@Param("city") String city, @Param("country") String country);
+
 }

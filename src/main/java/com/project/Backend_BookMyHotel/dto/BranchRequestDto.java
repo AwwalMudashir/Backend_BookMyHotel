@@ -1,5 +1,6 @@
 package com.project.Backend_BookMyHotel.dto;
 
+import com.project.Backend_BookMyHotel.validation.ValidCurrencyCode;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -18,6 +19,7 @@ public class BranchRequestDto {
     private String address;
     @NotBlank
     @Size(min = 3, max = 3)
+    @ValidCurrencyCode
     private String currency;
     private LocalTime checkInTime;
     private LocalTime checkOutTime;

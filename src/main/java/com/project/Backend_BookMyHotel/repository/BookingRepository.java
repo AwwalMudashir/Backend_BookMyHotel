@@ -2,6 +2,8 @@ package com.project.Backend_BookMyHotel.repository;
 
 import com.project.Backend_BookMyHotel.domain.Booking;
 import com.project.Backend_BookMyHotel.dto.BookingStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,4 +28,13 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
     );
+
+    Booking findByReference(String reference);
+
+    Page<Booking> findByUserId(Long userId, Pageable pageable);
+
+    Page<Booking> findByUserIdAndStatus(Long userId, BookingStatus status, Pageable pageable);
+    // Hotel Manager Queries (Filters through Room -> Branch -> Hotel)
+    Page<Booking> findByRoomBranchHotelId(Long hotelId, Pageable pageable);
+    Page<Booking> findByRoomBranchHotelIdAndStatus(Long hotelId, BookingStatus status, Pageable pageable);
 }

@@ -28,9 +28,10 @@ public class RedisConfig {
                 .disableCachingNullValues()
                 .serializeValuesWith(jsonSerializer);
 
-        // 3. Set the 5-minute TTL specifically for the "availability" cache
+        // 3. Set per-cache TTLs
         Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
         cacheConfigurations.put("availability", defaultConfig.entryTtl(Duration.ofMinutes(5)));
+        cacheConfigurations.put("exchange-rates", defaultConfig.entryTtl(Duration.ofHours(24)));
 
         // 4. Build and return the CacheManager bean
         return RedisCacheManager.builder(connectionFactory)

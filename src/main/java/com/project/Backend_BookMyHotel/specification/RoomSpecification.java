@@ -17,8 +17,13 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class RoomSpecification {
+
+    // Per-branch-currency min/max, already converted from the caller's filterCurrency. Either
+    // bound may be null, mirroring how a bare minPrice/maxPrice is optional.
+    public record CurrencyPriceRange(BigDecimal min, BigDecimal max) {}
 
     public static Specification<Room> buildSearchSpec(
             LocalDate checkIn,
@@ -30,6 +35,26 @@ public class RoomSpecification {
             String roomType,
             Integer maxOccupancy,
             Long hotelId
+    ) {
+        return buildSearchSpec(checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelId, null);
+    }
+
+    // priceRangesByCurrency: when non-empty, price filtering is done per branch.currency using
+    // these pre-converted ranges instead of comparing minPrice/maxPrice directly against
+    // pricePerNight — rooms are priced in their branch's native currency, so a raw comparison
+    // across branches with different currencies (e.g. GBP vs AED) is meaningless. Pass null/empty
+    // to fall back to the raw, currency-unaware comparison (backward-compatible default).
+    public static Specification<Room> buildSearchSpec(
+            LocalDate checkIn,
+            LocalDate checkOut,
+            String city,
+            String country,
+            BigDecimal minPrice,
+            BigDecimal maxPrice,
+            String roomType,
+            Integer maxOccupancy,
+            Long hotelId,
+            Map<String, CurrencyPriceRange> priceRangesByCurrency
     ) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -52,11 +77,28 @@ public class RoomSpecification {
             }
 
             // 3. Price Filters
-            if (minPrice != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("pricePerNight"), minPrice));
-            }
-            if (maxPrice != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("pricePerNight"), maxPrice));
+            if (priceRangesByCurrency != null && !priceRangesByCurrency.isEmpty()) {
+                List<Predicate> currencyPredicates = new ArrayList<>();
+                for (Map.Entry<String, CurrencyPriceRange> entry : priceRangesByCurrency.entrySet()) {
+                    CurrencyPriceRange range = entry.getValue();
+                    List<Predicate> rangePredicates = new ArrayList<>();
+                    rangePredicates.add(cb.equal(cb.upper(branchJoin.get("currency")), entry.getKey()));
+                    if (range.min() != null) {
+                        rangePredicates.add(cb.greaterThanOrEqualTo(root.get("pricePerNight"), range.min()));
+                    }
+                    if (range.max() != null) {
+                        rangePredicates.add(cb.lessThanOrEqualTo(root.get("pricePerNight"), range.max()));
+                    }
+                    currencyPredicates.add(cb.and(rangePredicates.toArray(new Predicate[0])));
+                }
+                predicates.add(cb.or(currencyPredicates.toArray(new Predicate[0])));
+            } else {
+                if (minPrice != null) {
+                    predicates.add(cb.greaterThanOrEqualTo(root.get("pricePerNight"), minPrice));
+                }
+                if (maxPrice != null) {
+                    predicates.add(cb.lessThanOrEqualTo(root.get("pricePerNight"), maxPrice));
+                }
             }
 
             // 4. Room Type, Occupancy, Hotel ID Filters

@@ -1,12 +1,12 @@
 package com.project.Backend_BookMyHotel.service;
 
+import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.domain.OtpVerification;
 import com.project.Backend_BookMyHotel.domain.RefreshToken;
 import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.*;
-import com.project.Backend_BookMyHotel.repository.OtpRepository;
-import com.project.Backend_BookMyHotel.repository.RefreshTokenRepository;
-import com.project.Backend_BookMyHotel.repository.UserRepository;
+import com.project.Backend_BookMyHotel.exception.TokenRefreshException;
+import com.project.Backend_BookMyHotel.repository.*;
 import com.project.Backend_BookMyHotel.util.JwtUtil;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +26,9 @@ public class UserService {
 
     @Autowired
     private UserRepository userRepo;
+
+    @Autowired
+    private HotelRepository hotelRepo;
 
     @Autowired
     private OtpRepository otpRepo;
@@ -86,6 +89,8 @@ public class UserService {
         user.setEmail(onboardDto.getEmail());
         user.setPassword(bencoder.encode(onboardDto.getPassword()));
         user.setRole(Role.CUSTOMER);
+        user.setManagedHotel(null);
+        user.setIsActive('Y');
 
         String userId = generateRandomId();
 
@@ -116,6 +121,117 @@ public class UserService {
         return new ResponseEntity<>(user, HttpStatus.CREATED);
     }
 
+    public ResponseEntity<?> addHotelManager(OnboardHotelManager onboardDto) {
+        User user = new User();
+        ErrorResponse err = new ErrorResponse();
+
+        if (userRepo.existsByEmail(onboardDto.getEmail())){
+            err.setStatus(HttpStatus.BAD_REQUEST);
+            err.setMessage("User already Exists");
+            return new ResponseEntity<>(err, HttpStatus.BAD_REQUEST);
+        }
+
+        if (!hotelRepo.existsById(onboardDto.getHotelId())){
+            err.setStatus(HttpStatus.BAD_REQUEST);
+            err.setMessage("This Hotel Doesn't Exist");
+            return new ResponseEntity<>(err, HttpStatus.BAD_REQUEST);
+        }
+
+        Hotel hotel = hotelRepo.findById(onboardDto.getHotelId()).get();
+
+        user.setFirstName(onboardDto.getFirstName());
+        user.setLastName(onboardDto.getLastName());
+        user.setEmail(onboardDto.getEmail());
+        user.setPassword(bencoder.encode(onboardDto.getPassword()));
+        user.setRole(Role.HOTEL_MANAGER);
+        user.setManagedHotel(hotel);
+        user.setIsActive('Y');
+
+        String userId = generateRandomId();
+
+        try {
+            while (userRepo.existsByUserId(userId)){
+                userId = generateRandomId();
+            }
+        } catch (Exception e) {
+            err.setStatus(HttpStatus.BAD_REQUEST);
+            err.setMessage("Error generating a random user ID");
+            return new ResponseEntity<>(err, HttpStatus.CONFLICT);
+        }
+
+        user.setUserId(userId);
+        userRepo.save(user);
+
+        // Sending of Registration Email
+        String html = emailTemplateService.hotelManagerWelcomeTemplate(
+                user.getFirstName() + user.getLastName(),
+                user.getEmail(),
+                onboardDto.getPassword(),
+                hotel.getName()
+        );
+
+        System.out.println("HTML template built, sending email");
+        resendEmailService.sendEmail(
+                user.getEmail(),
+                "Welcome Hotel Manager to BMH",
+                html
+        );
+        System.out.println("Email Sent successfully");
+
+        return new ResponseEntity<>(user, HttpStatus.CREATED);
+    }
+
+    public ResponseEntity<?> createAdmin(AdminDto onboardDto) {
+        User user = new User();
+        ErrorResponse err = new ErrorResponse();
+
+        if (userRepo.existsByEmail(onboardDto.getEmail())){
+            err.setStatus(HttpStatus.BAD_REQUEST);
+            err.setMessage("User already Exists");
+            return new ResponseEntity<>(err, HttpStatus.BAD_REQUEST);
+        }
+
+        user.setFirstName(onboardDto.getFirstName());
+        user.setLastName(onboardDto.getLastName());
+        user.setEmail(onboardDto.getEmail());
+        user.setPassword(bencoder.encode(onboardDto.getPassword()));
+        user.setRole(Role.ADMIN);
+        user.setManagedHotel(null);
+        user.setIsActive('Y');
+
+        String userId = generateRandomId();
+
+        try {
+            while (userRepo.existsByUserId(userId)){
+                userId = generateRandomId();
+            }
+        } catch (Exception e) {
+            err.setStatus(HttpStatus.BAD_REQUEST);
+            err.setMessage("Error generating a random user ID");
+            return new ResponseEntity<>(err, HttpStatus.CONFLICT);
+        }
+
+        user.setUserId(userId);
+        userRepo.save(user);
+
+        // Sending of Registration Email
+        String html = emailTemplateService.adminWelcomeTemplate(
+                user.getFirstName() + user.getLastName(),
+                user.getEmail(),
+                onboardDto.getPassword()
+        );
+
+        System.out.println("HTML template built, sending email");
+        resendEmailService.sendEmail(
+                user.getEmail(),
+                "Welcome Admin to BMH",
+                html
+        );
+        System.out.println("Email Sent successfully");
+
+        return new ResponseEntity<>(user, HttpStatus.CREATED);
+    }
+
     public ResponseEntity<?> login(LoginRequest request) {
         ErrorResponse err = new ErrorResponse();
 
@@ -134,6 +250,12 @@ public class UserService {
         if (user == null) {
             err.setStatus(HttpStatus.UNAUTHORIZED);
             err.setMessage("User Not Found");
+            return new ResponseEntity<>(err,HttpStatus.UNAUTHORIZED);
+        }
+
+        if (user.getIsActive() == 'N') {
+            err.setStatus(HttpStatus.UNAUTHORIZED);
+            err.setMessage("This Account isn't Active Again");
             return new ResponseEntity<>(err,HttpStatus.UNAUTHORIZED);
         }
 
@@ -156,17 +278,18 @@ public class UserService {
     }
 
     public ResponseEntity<?> refreshToken(TokenRefreshRequest request) {
-        String requestRefreshToken = request.getRefreshToken();
+        String requestRefreshToken = request == null ? null : request.getRefreshToken();
 
-        RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
-                .orElseThrow(() -> new RuntimeException("Refresh token is not in database"));
+        if (requestRefreshToken == null || requestRefreshToken.isBlank()) {
+            throw new TokenRefreshException("Refresh token is required");
+        }
 
-        refreshTokenService.verifyExpiration(refreshToken);
-
-        User user = refreshToken.getUser();
-        String newAccessToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
-
+        // Rotation looks the token up, checks expiry and issues the replacement in a
+        // single transaction, so a stale token can never mint a new access token.
         RefreshToken rotated = refreshTokenService.rotateRefreshToken(requestRefreshToken);
+
+        User user = rotated.getUser();
+        String newAccessToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
 
         return ResponseEntity.ok(new TokenRefreshResponse(newAccessToken, rotated.getToken()));
     }
@@ -190,6 +313,7 @@ public class UserService {
                 user.getLastName(),
                 user.getGender(),
                 user.getRole(),
+                user.getManagedHotel(),
                 user.getBookings(),
                 user.getReviews()
         );
@@ -234,6 +358,7 @@ public class UserService {
                 updatedUser.getLastName(),
                 updatedUser.getGender(),
                 updatedUser.getRole(),
+                updatedUser.getManagedHotel(),
                 updatedUser.getBookings(),
                 updatedUser.getReviews()
         );

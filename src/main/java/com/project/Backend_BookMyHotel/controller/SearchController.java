@@ -28,6 +28,7 @@ public class SearchController {
             @RequestParam(required = false) String country,
             @RequestParam(required = false) BigDecimal minPrice,
             @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) String filterCurrency,
             @RequestParam(required = false) String roomType,
             @RequestParam(required = false) Integer maxOccupancy,
             @RequestParam(required = false) Long hotelId,
@@ -37,7 +38,7 @@ public class SearchController {
     ) {
 
         return searchService.searchAvailableRooms(
-                checkIn, checkOut, city, country, minPrice, maxPrice,
+                checkIn, checkOut, city, country, minPrice, maxPrice, filterCurrency,
                 roomType, maxOccupancy, hotelId, page, size, sort
         );
     }

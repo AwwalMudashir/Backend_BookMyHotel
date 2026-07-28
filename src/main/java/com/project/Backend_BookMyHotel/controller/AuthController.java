@@ -33,6 +33,16 @@ public class AuthController {
         return userService.createUser(onboardDto);
     }
 
+    @PostMapping("/register/hotel-manager")
+    public ResponseEntity<?> addHotelmanager(@RequestBody OnboardHotelManager onboardDto){
+        return userService.addHotelManager(onboardDto);
+    }
+
+    @PostMapping("/register/admin")
+    public ResponseEntity<?> createAdmin(@RequestBody AdminDto onboardDto){
+        return userService.createAdmin(onboardDto);
+    }
+
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         return userService.login(request);

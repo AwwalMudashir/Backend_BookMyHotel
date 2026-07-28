@@ -4,6 +4,7 @@ import com.project.Backend_BookMyHotel.dto.BranchRequestDto;
 import com.project.Backend_BookMyHotel.dto.HotelRequestDto;
 import com.project.Backend_BookMyHotel.dto.ReviewResponse;
 import com.project.Backend_BookMyHotel.dto.RoomResponse;
+import com.project.Backend_BookMyHotel.dto.ServiceResponse;
 import com.project.Backend_BookMyHotel.service.BranchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/branch")
+@RequestMapping({"/branch", "/branches"})
 public class BranchController {
     @Autowired
     private BranchService branchService;
@@ -48,6 +49,13 @@ public class BranchController {
             @PathVariable Long branchId) {
         List<ReviewResponse> reviews = branchService.getReviewsByBranchId(branchId);
         return ResponseEntity.ok(reviews);
+    }
+
+    @GetMapping("/{branchId}/services")
+    public ResponseEntity<List<ServiceResponse>> getServicesByBranch(
+            @PathVariable Long branchId) {
+        List<ServiceResponse> services = branchService.getServicesByBranchId(branchId);
+        return ResponseEntity.ok(services);
     }
 
     @PostMapping("/create")

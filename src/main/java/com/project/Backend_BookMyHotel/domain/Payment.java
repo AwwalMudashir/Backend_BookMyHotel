@@ -1,5 +1,6 @@
 package com.project.Backend_BookMyHotel.domain;
 
+import com.project.Backend_BookMyHotel.dto.PaymentStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -27,7 +28,9 @@ public class Payment {
 
     private BigDecimal amount;
     private String currency;
-    private String status;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus status;
 
     @Column(name = "refund_id")
     private String refundId;
