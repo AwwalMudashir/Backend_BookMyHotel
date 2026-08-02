@@ -1,5 +1,6 @@
 package com.project.Backend_BookMyHotel.domain;
 
+import com.project.Backend_BookMyHotel.dto.RoomTag;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -9,8 +10,10 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Entity
 @Table(name = "rooms")
@@ -52,4 +55,14 @@ public class Room {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "public_ids", columnDefinition = "jsonb")
     private List<String> publicIds = new ArrayList<>();
+
+    // A proper, filterable classification set (eco-friendly, work-friendly, ...) — kept separate
+    // from `amenities` above since these are curated category badges the search/UI need to query
+    // directly, not arbitrary feature flags. Backed by its own join table (room_tags) rather than
+    // another JSON column so RoomSpecification can filter on it with a normal SQL join.
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "room_tags", joinColumns = @JoinColumn(name = "room_id"))
+    @Column(name = "tag")
+    @Enumerated(EnumType.STRING)
+    private Set<RoomTag> tags = new HashSet<>();
 }

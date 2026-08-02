@@ -2,6 +2,7 @@ package com.project.Backend_BookMyHotel.service;
 
 import com.project.Backend_BookMyHotel.domain.RefreshToken;
 import com.project.Backend_BookMyHotel.domain.User;
+import com.project.Backend_BookMyHotel.exception.TokenRefreshException;
 import com.project.Backend_BookMyHotel.repository.RefreshTokenRepository;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -51,14 +52,17 @@ public class RefreshTokenService {
     @Transactional
     public RefreshToken rotateRefreshToken(String oldToken) {
         RefreshToken existing = refreshTokenRepository.findByToken(oldToken)
-                .orElseThrow(() -> new RuntimeException("Invalid refresh token"));
+                .orElseThrow(() -> new TokenRefreshException("Invalid refresh token. Please sign in again."));
 
         if (existing.getExpiryDate().isBefore(Instant.now())) {
             refreshTokenRepository.delete(existing);
-            throw new RuntimeException("Refresh token was expired. Please sign in again.");
+            throw new TokenRefreshException("Refresh token was expired. Please sign in again.");
         }
 
-        User user = existing.getUser();
+        // Touch the owner while the session is still open so the caller can read it
+        // off the returned entity without tripping a LazyInitializationException.
+        existing.getUser().getEmail();
+
         String newToken = UUID.randomUUID().toString();
         Instant newExpiry = Instant.now().plusMillis(refreshTokenDurationMs);
 
@@ -74,7 +78,7 @@ public class RefreshTokenService {
         // If the expiration timestamp is before the current moment in time...
         if (token.getExpiryDate().compareTo(Instant.now()) < 0) {
             refreshTokenRepository.delete(token);
-            throw new RuntimeException("Refresh token was expired. Please make a new sign-in request");
+            throw new TokenRefreshException("Refresh token was expired. Please make a new sign-in request");
         }
 
         return token;

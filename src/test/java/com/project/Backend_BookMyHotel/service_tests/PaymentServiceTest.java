@@ -17,6 +17,7 @@ import com.project.Backend_BookMyHotel.service.PaymentService;
 import com.stripe.exception.ApiConnectionException;
 import com.stripe.model.PaymentIntent;
 import com.stripe.model.Refund;
+import com.stripe.net.RequestOptions;
 import com.stripe.param.PaymentIntentCreateParams;
 import com.stripe.param.RefundCreateParams;
 import org.junit.jupiter.api.Assertions;
@@ -82,7 +83,8 @@ public class PaymentServiceTest {
 
     @Test
     void createPaymentIntent_Success_CreatesStripeIntentAndPersistsPendingPayment() {
-        Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED)).thenReturn(Optional.empty());
         Mockito.when(paymentRepository.findByBookingId(50L)).thenReturn(new ArrayList<>());
 
         PaymentIntent fakeIntent = Mockito.mock(PaymentIntent.class);
@@ -90,7 +92,7 @@ public class PaymentServiceTest {
         Mockito.when(fakeIntent.getClientSecret()).thenReturn("pi_123_secret_abc");
 
         try (MockedStatic<PaymentIntent> stripeStatic = Mockito.mockStatic(PaymentIntent.class)) {
-            stripeStatic.when(() -> PaymentIntent.create(Mockito.any(PaymentIntentCreateParams.class)))
+            stripeStatic.when(() -> PaymentIntent.create(Mockito.any(PaymentIntentCreateParams.class), Mockito.any(RequestOptions.class)))
                     .thenReturn(fakeIntent);
 
             ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 1L, Role.CUSTOMER);
@@ -102,7 +104,7 @@ public class PaymentServiceTest {
             Assertions.assertEquals("GBP", body.getCurrency());
 
             ArgumentCaptor<PaymentIntentCreateParams> paramsCaptor = ArgumentCaptor.forClass(PaymentIntentCreateParams.class);
-            stripeStatic.verify(() -> PaymentIntent.create(paramsCaptor.capture()));
+            stripeStatic.verify(() -> PaymentIntent.create(paramsCaptor.capture(), Mockito.any(RequestOptions.class)));
             Assertions.assertEquals(30000L, paramsCaptor.getValue().getAmount());
             Assertions.assertEquals("gbp", paramsCaptor.getValue().getCurrency());
         }
@@ -115,7 +117,7 @@ public class PaymentServiceTest {
 
     @Test
     void createPaymentIntent_WhenNotOwner_ReturnsBadRequestWithoutCallingStripe() {
-        Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
 
         try (MockedStatic<PaymentIntent> stripeStatic = Mockito.mockStatic(PaymentIntent.class)) {
             ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 999L, Role.CUSTOMER);
@@ -129,7 +131,7 @@ public class PaymentServiceTest {
     @Test
     void createPaymentIntent_WhenBookingNotPending_ReturnsBadRequest() {
         booking.setStatus(BookingStatus.CONFIRMED);
-        Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
 
         ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 1L, Role.CUSTOMER);
 
@@ -141,8 +143,9 @@ public class PaymentServiceTest {
     void createPaymentIntent_WhenAlreadyPaid_ReturnsBadRequest() {
         Payment succeeded = new Payment();
         succeeded.setStatus(PaymentStatus.SUCCEEDED);
-        Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
-        Mockito.when(paymentRepository.findByBookingId(50L)).thenReturn(List.of(succeeded));
+        Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
+                .thenReturn(Optional.of(succeeded));
 
         ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 1L, Role.CUSTOMER);
 
@@ -279,8 +282,35 @@ public class PaymentServiceTest {
     }
 
     @Test
+    void getPaymentStatus_ReturnsLatestSucceededEvenIfPendingAttemptExists() {
+        Payment successfulPayment = new Payment();
+        successfulPayment.setStripePaymentId("pi_success");
+        successfulPayment.setStatus(PaymentStatus.SUCCEEDED);
+        successfulPayment.setAmount(BigDecimal.valueOf(300));
+        successfulPayment.setCurrency("GBP");
+
+        Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
+                .thenReturn(Optional.of(successfulPayment));
+
+        ResponseEntity<?> response = paymentService.getPaymentStatus(50L, 1L, Role.CUSTOMER);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        PaymentStatusResponse body = (PaymentStatusResponse) response.getBody();
+        Assertions.assertEquals(PaymentStatus.SUCCEEDED, body.getStatus());
+        Assertions.assertEquals("pi_success", body.getStripePaymentId());
+
+        Mockito.verify(paymentRepository, Mockito.never())
+                .findFirstByBookingIdOrderByIdDesc(50L);
+    }
+
+    @Test
     void getPaymentStatus_WhenNoPaymentExists_ReturnsNotFound() {
         Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
+                .thenReturn(Optional.empty());
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.PENDING))
+                .thenReturn(Optional.empty());
         Mockito.when(paymentRepository.findFirstByBookingIdOrderByIdDesc(50L)).thenReturn(Optional.empty());
 
         ResponseEntity<?> response = paymentService.getPaymentStatus(50L, 1L, Role.CUSTOMER);

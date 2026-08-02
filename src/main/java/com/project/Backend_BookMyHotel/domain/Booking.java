@@ -51,6 +51,16 @@ public class Booking {
     @Column(name = "total_price")
     private BigDecimal totalPrice;
 
+    // How many eco points THIS booking contributed to its user, set once at confirmation time.
+    // Tracked per-booking (rather than just incrementing User.ecoPoints directly) so cancelling a
+    // CONFIRMED eco booking later can claw back exactly what it granted — without this, cancelling
+    // after confirmation would leave the user with points for a stay that no longer happened.
+    // @Builder.Default is required here: Lombok's builder otherwise silently ignores this field
+    // initializer and leaves it null for anything built via Booking.builder()...build().
+    @Builder.Default
+    @Column(name = "eco_points_earned")
+    private Integer ecoPointsEarned = 0;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

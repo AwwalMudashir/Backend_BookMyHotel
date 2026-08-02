@@ -56,6 +56,15 @@ public class User {
     @Column(name = "is_active")
     private Character isActive;
 
+    @Column(name = "eco_points")
+    private Integer ecoPoints = 0;
+
+    // Google's stable per-account "sub" claim. Null for users who only ever signed up with
+    // email/password. Kept separate from email so a Google login can find (and link onto) an
+    // existing password account by email on first use, then use this column for every login after.
+    @Column(name = "google_id", unique = true)
+    private String googleId;
+
     public boolean isAdmin() {
         return this.role == Role.ADMIN;
     }

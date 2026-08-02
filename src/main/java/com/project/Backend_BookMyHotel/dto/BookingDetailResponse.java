@@ -21,6 +21,7 @@ public class BookingDetailResponse {
     private BookingStatus status;
     private BigDecimal totalPrice;
     private String promoCode;
+    private Integer ecoPointsEarned;
     private LocalDateTime createdAt;
     private List<AddonServiceResponse> services;
     private List<PaymentResponse> payments;

@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalTime;
 import java.util.List;
@@ -36,6 +38,20 @@ public class Branch {
 
     @Column(name = "check_out_time")
     private LocalTime checkOutTime;
+
+    // Property-level sustainability profile — distinct from Room.tags (RoomTag.ECO_FRIENDLY),
+    // which drives the per-booking eco-points reward. This describes the branch itself: whether
+    // it holds a formal certification, which sustainable practices it follows, and an overall
+    // score — not derivable from which individual rooms happen to be tagged eco-friendly.
+    @Column(name = "eco_certified")
+    private Boolean ecoCertified = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "eco_tags", columnDefinition = "jsonb")
+    private List<String> ecoTags;
+
+    @Column(name = "eco_score")
+    private Integer ecoScore;
 
     @OneToMany(mappedBy = "branch", cascade = CascadeType.ALL)
     private List<Room> rooms;

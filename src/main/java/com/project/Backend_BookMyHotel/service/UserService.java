@@ -242,7 +242,7 @@ public class UserService {
             );
         } catch (Exception e) {
             err.setStatus(HttpStatus.UNAUTHORIZED);
-            err.setMessage("User already Exists");
+            err.setMessage("User with this credentials doesn't exist");
             return new ResponseEntity<>(err,HttpStatus.UNAUTHORIZED);
         }
 
@@ -315,11 +315,28 @@ public class UserService {
                 user.getRole(),
                 user.getManagedHotel(),
                 user.getBookings(),
-                user.getReviews()
+                user.getReviews(),
+                user.getEcoPoints()
         );
 
         return ResponseEntity.ok(dto);
     }
+
+    public ResponseEntity<?> getCurrentUserPoints(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
+        }
+
+        String email = authentication.getName();
+        User user = userRepo.findByEmail(email);
+
+        if (user == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
+        }
+
+        return ResponseEntity.ok(user.getEcoPoints());
+    }
+
 
     public ResponseEntity<?> updateprofile(Authentication authentication, UpdateProfileDto updateDto) {
         // 1. Validation check for Authentication
@@ -360,7 +377,8 @@ public class UserService {
                 updatedUser.getRole(),
                 updatedUser.getManagedHotel(),
                 updatedUser.getBookings(),
-                updatedUser.getReviews()
+                updatedUser.getReviews(),
+                updatedUser.getEcoPoints()
         );
 
         return ResponseEntity.ok(responseDto);

@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalTime;
+import java.util.List;
 
 @Data
 @AllArgsConstructor
@@ -23,4 +24,7 @@ public class BranchRequestDto {
     private String currency;
     private LocalTime checkInTime;
     private LocalTime checkOutTime;
+    private Boolean ecoCertified;
+    private List<String> ecoTags;
+    private Integer ecoScore;
 }

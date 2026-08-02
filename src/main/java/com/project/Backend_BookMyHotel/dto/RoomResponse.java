@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Data
 @AllArgsConstructor
@@ -24,4 +25,5 @@ public class RoomResponse {
     private Map<String, Object> amenities;
     private List<String> images;
     private List<String> publicIds;
+    private Set<RoomTag> tags;
 }

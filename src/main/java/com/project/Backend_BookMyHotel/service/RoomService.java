@@ -106,6 +106,9 @@ public class RoomService {
         room.setRoomType(typeOpt.get().getName());
         room.setPricePerNight(request.getPricePerNight());
         room.setAmenities(request.getAmenities());
+        if (request.getTags() != null) {
+            room.setTags(request.getTags());
+        }
 
         // Process images with Cloudinary
         List<String> imageUrls = new ArrayList<>();
@@ -157,6 +160,9 @@ public class RoomService {
 
         room.setPricePerNight(request.getPricePerNight());
         room.setAmenities(request.getAmenities());
+        if (request.getTags() != null) {
+            room.setTags(request.getTags());
+        }
 
         // Process and append new images to the existing room gallery
         if (imageFiles != null && !imageFiles.isEmpty()) {
@@ -227,6 +233,7 @@ public class RoomService {
             dto.setCurrency(room.getBranch().getCurrency());
         }
         dto.setAmenities(room.getAmenities());
+        dto.setTags(room.getTags());
 
         if (room.getBranch() != null) {
             dto.setBranchId(room.getBranch().getId());

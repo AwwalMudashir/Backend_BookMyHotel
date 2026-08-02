@@ -4,6 +4,7 @@ import com.project.Backend_BookMyHotel.domain.Branch;
 import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.RoomSearchResult;
+import com.project.Backend_BookMyHotel.dto.RoomTag;
 import com.project.Backend_BookMyHotel.repository.BranchRepository;
 import com.project.Backend_BookMyHotel.repository.RoomRepository;
 import com.project.Backend_BookMyHotel.specification.RoomSpecification;
@@ -25,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 // Holds only the room-search DB fetch. Split out from SearchService specifically so the
 // @Cacheable method's return type never includes Page/Pageable/ResponseEntity — those are
@@ -55,6 +57,10 @@ public class RoomSearchCacheService {
                     "(#roomType != null ? #roomType : '') + ':' + " +
                     "(#maxOccupancy != null ? #maxOccupancy.toString() : '') + ':' + " +
                     "(#hotelId != null ? #hotelId.toString() : '') + ':' + " +
+                    // Set iteration order is only stable within a single running JVM, not across
+                    // restarts — worst case a restart splits what should be one cache entry into
+                    // two, which self-heals via the 5-minute TTL. Not worth a sorted-key dance for.
+                    "(#tags != null && !#tags.isEmpty() ? #tags.toString() : '') + ':' + " +
                     "#page + ':' + #size + ':' + #sort"
     )
     public CachedSearchResult fetchSearchResults(
@@ -68,6 +74,7 @@ public class RoomSearchCacheService {
             String roomType,
             Integer maxOccupancy,
             Long hotelId,
+            Set<RoomTag> tags,
             int page,
             int size,
             String sort
@@ -79,7 +86,7 @@ public class RoomSearchCacheService {
 
         Specification<Room> spec = RoomSpecification.buildSearchSpec(
                 checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelId,
-                priceRangesByCurrency
+                priceRangesByCurrency, tags
         );
 
         Page<Room> roomPage = roomRepository.findAll(spec, pageable);
@@ -185,6 +192,7 @@ public class RoomSearchCacheService {
                 .totalPrice(totalPrice)
                 .currency(branch != null ? branch.getCurrency() : "USD")
                 .amenities(amenities)
+                .tags(room != null ? room.getTags() : Collections.emptySet())
                 .available(true)
                 .build();
     }

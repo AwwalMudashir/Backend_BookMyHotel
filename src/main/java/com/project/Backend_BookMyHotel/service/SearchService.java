@@ -1,8 +1,7 @@
 package com.project.Backend_BookMyHotel.service;
 
 import com.project.Backend_BookMyHotel.dto.RoomSearchResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.project.Backend_BookMyHotel.dto.RoomTag;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -13,11 +12,10 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
 
 @Service
 public class SearchService {
-
-    private static final Logger log = LoggerFactory.getLogger(SearchService.class);
 
     @Autowired
     private RoomSearchCacheService roomSearchCacheService;
@@ -33,6 +31,7 @@ public class SearchService {
             String roomType,
             Integer maxOccupancy,
             Long hotelId,
+            Set<RoomTag> tags,
             int page,
             int size,
             String sort
@@ -40,9 +39,12 @@ public class SearchService {
         // The actual (cacheable) DB fetch lives in RoomSearchCacheService and only ever returns a
         // plain list + count. Page/Pageable/ResponseEntity are built fresh here on every call —
         // cheap, in-memory work — so nothing Jackson can't safely round-trip ever goes into Redis.
+        // No try/catch here on purpose: letting an unexpected exception propagate to
+        // GlobalExceptionHandler is what gets it logged with a real stack trace and a consistent
+        // {status, message} JSON body — swallowing it locally just hides the real cause.
         RoomSearchCacheService.CachedSearchResult cached = roomSearchCacheService.fetchSearchResults(
                 checkIn, checkOut, city, country, minPrice, maxPrice, filterCurrency,
-                roomType, maxOccupancy, hotelId, page, size, sort
+                roomType, maxOccupancy, hotelId, tags, page, size, sort
         );
 
         Pageable pageable = PageRequest.of(page, size, RoomSearchCacheService.parseSortParameter(sort));

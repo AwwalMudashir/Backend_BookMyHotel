@@ -24,4 +24,5 @@ public class CurrentUserDto {
     private Hotel managedHotel;
     private List<Booking> bookings;
     private List<Review> reviews;
+    private Integer ecoPoints;
 }

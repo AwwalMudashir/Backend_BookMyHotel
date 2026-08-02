@@ -1,6 +1,7 @@
 package com.project.Backend_BookMyHotel.controller;
 
 import com.project.Backend_BookMyHotel.dto.RoomSearchResult;
+import com.project.Backend_BookMyHotel.dto.RoomTag;
 import com.project.Backend_BookMyHotel.service.SearchService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/search")
@@ -32,6 +34,7 @@ public class SearchController {
             @RequestParam(required = false) String roomType,
             @RequestParam(required = false) Integer maxOccupancy,
             @RequestParam(required = false) Long hotelId,
+            @RequestParam(required = false) Set<RoomTag> tags,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(defaultValue = "price,asc") String sort
@@ -39,7 +42,7 @@ public class SearchController {
 
         return searchService.searchAvailableRooms(
                 checkIn, checkOut, city, country, minPrice, maxPrice, filterCurrency,
-                roomType, maxOccupancy, hotelId, page, size, sort
+                roomType, maxOccupancy, hotelId, tags, page, size, sort
         );
     }
 }

@@ -26,6 +26,9 @@ public class BookingResponse {
     // The promo code actually stored on the booking (Booking.promotion), independent of
     // priceBreakdown.appliedPromoCode below, which only ever populates on the create response.
     private String promoCode;
+    // Only non-zero once the booking has been confirmed for an eco-friendly-tagged room — see
+    // BookingService.confirmBooking. Always 0 on the create response itself.
+    private Integer ecoPointsEarned;
     private PriceBreakdown priceBreakdown;
     private List<AddonServiceResponse> services;
     private LocalDateTime createdAt;

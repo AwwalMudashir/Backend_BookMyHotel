@@ -125,6 +125,7 @@ class SearchServiceIntegrationTest {
                 null,
                 null,
                 null,
+                null,
                 0,
                 10,
                 null
@@ -152,6 +153,7 @@ class SearchServiceIntegrationTest {
                 null,
                 null,
                 null,
+                null,
                 0,
                 10,
                 null
@@ -164,6 +166,7 @@ class SearchServiceIntegrationTest {
                 LocalDate.of(2026, 8, 3),
                 "Abuja",
                 "NG",
+                null,
                 null,
                 null,
                 null,
@@ -195,7 +198,7 @@ class SearchServiceIntegrationTest {
         ResponseEntity<?> response = searchService.searchAvailableRooms(
                 null, null, null, null,
                 new BigDecimal("100.00"), new BigDecimal("200.00"), null,
-                null, null, null,
+                null, null, null, null,
                 0, 10, null
         );
 
@@ -216,12 +219,33 @@ class SearchServiceIntegrationTest {
         ResponseEntity<?> response = searchService.searchAvailableRooms(
                 null, null, null, null,
                 new BigDecimal("100.00"), new BigDecimal("200.00"), "GBP",
-                null, null, null,
+                null, null, null, null,
                 0, 10, null
         );
 
         // 100-200 GBP converts to roughly 470-941 AED (via the fixed GBP/AED test rates), so the
         // 150 AED room correctly falls outside the range while the 150 GBP room stays inside it.
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        Page<?> page = (Page<?>) response.getBody();
+        assertThat(page.getContent()).hasSize(1);
+    }
+
+    @Test
+    void searchByEcoFriendlyTagReturnsOnlyTaggedRooms() {
+        Hotel hotel = createHotel("Green Hotel");
+        Branch branch = createBranch(hotel, "Berlin", "DE");
+        Room ecoRoom = createRoom(branch, "Deluxe", new BigDecimal("120.00"));
+        ecoRoom.setTags(java.util.Set.of(RoomTag.ECO_FRIENDLY));
+        roomRepository.save(ecoRoom);
+        createRoom(branch, "Standard", new BigDecimal("90.00"));
+
+        ResponseEntity<?> response = searchService.searchAvailableRooms(
+                null, null, "Berlin", "DE",
+                null, null, null,
+                null, null, null, java.util.Set.of(RoomTag.ECO_FRIENDLY),
+                0, 10, null
+        );
+
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         Page<?> page = (Page<?>) response.getBody();
         assertThat(page.getContent()).hasSize(1);

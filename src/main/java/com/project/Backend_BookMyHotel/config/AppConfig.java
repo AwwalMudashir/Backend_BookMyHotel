@@ -14,6 +14,7 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -58,7 +59,10 @@ public class AppConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(custom -> custom.disable())
                 .authorizeHttpRequests(registry -> registry
-                        .requestMatchers("/auth/register", "/auth/login","/auth/refresh","/auth/forgot-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/hotel/all","/hotel","/hotel/{id}","/hotel/{id}/branches","/auth/logout","/search/rooms","/payments/webhook","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login","/auth/google","/auth/refresh","/auth/forgot-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/hotel/all","/hotel","/hotel/{id}","/hotel/{id}/branches","/auth/logout","/search/rooms","/room/{roomId}","/payments/webhook","/contact","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // Browsing active promotions is public (e.g. shown on a hotel page); create/
+                        // update/deactivate stay behind the @PreAuthorize checks on those endpoints.
+                        .requestMatchers(HttpMethod.GET, "/promotions", "/promotion").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(httpBasic -> {})

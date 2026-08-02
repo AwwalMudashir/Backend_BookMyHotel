@@ -1,12 +1,14 @@
 package com.project.Backend_BookMyHotel.controller;
 
 import com.project.Backend_BookMyHotel.dto.BranchRequestDto;
+import com.project.Backend_BookMyHotel.dto.BranchReviewsResponse;
 import com.project.Backend_BookMyHotel.dto.HotelRequestDto;
-import com.project.Backend_BookMyHotel.dto.ReviewResponse;
 import com.project.Backend_BookMyHotel.dto.RoomResponse;
 import com.project.Backend_BookMyHotel.dto.ServiceResponse;
 import com.project.Backend_BookMyHotel.service.BranchService;
+import com.project.Backend_BookMyHotel.service.ReviewService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,9 @@ import java.util.List;
 public class BranchController {
     @Autowired
     private BranchService branchService;
+
+    @Autowired
+    private ReviewService reviewService;
 
     @GetMapping("/all")
     @PreAuthorize("hasAuthority('ADMIN')")
@@ -44,10 +49,12 @@ public class BranchController {
         return ResponseEntity.ok(rooms);
     }
 
-    @GetMapping("/branch/{branchId}/reviews")
-    public ResponseEntity<List<ReviewResponse>> getReviewsByBranch(
-            @PathVariable Long branchId) {
-        List<ReviewResponse> reviews = branchService.getReviewsByBranchId(branchId);
+    @GetMapping("/{branchId}/reviews")
+    public ResponseEntity<BranchReviewsResponse> getReviewsByBranch(
+            @PathVariable Long branchId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        BranchReviewsResponse reviews = reviewService.getReviewsByBranch(branchId, PageRequest.of(page, size));
         return ResponseEntity.ok(reviews);
     }
 

@@ -2,7 +2,6 @@ package com.project.Backend_BookMyHotel.service;
 
 import com.project.Backend_BookMyHotel.domain.Branch;
 import com.project.Backend_BookMyHotel.domain.Hotel;
-import com.project.Backend_BookMyHotel.domain.Review;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.*;
 import com.project.Backend_BookMyHotel.repository.BranchRepository;
@@ -80,16 +79,6 @@ public class BranchService {
                 .collect(Collectors.toList());
     }
 
-    public List<ReviewResponse> getReviewsByBranchId(Long branchId) {
-        Branch branch = branchRepo.findByIdWithReviews(branchId)
-                .orElseThrow(() -> new EntityNotFoundException(
-                        "Branch not found with id: " + branchId));
-
-        return branch.getReviews().stream()
-                .map(this::toReviewResponse)
-                .collect(Collectors.toList());
-    }
-
     public List<ServiceResponse> getServicesByBranchId(Long branchId) {
         Branch branch = branchRepo.findByIdWithServices(branchId)
                 .orElseThrow(() -> new EntityNotFoundException(
@@ -122,6 +111,9 @@ public class BranchService {
         branch.setCurrency(request.getCurrency().trim().toUpperCase(Locale.ROOT));
         branch.setCheckInTime(request.getCheckInTime());
         branch.setCheckOutTime(request.getCheckOutTime());
+        branch.setEcoCertified(request.getEcoCertified() != null ? request.getEcoCertified() : false);
+        branch.setEcoTags(request.getEcoTags());
+        branch.setEcoScore(request.getEcoScore());
 
         Branch savedBranch = branchRepo.save(branch);
         return new ResponseEntity<>(savedBranch,HttpStatus.CREATED);
@@ -165,6 +157,16 @@ public class BranchService {
         branch.setCheckInTime(request.getCheckInTime());
         branch.setCheckOutTime(request.getCheckOutTime());
 
+        if (request.getEcoCertified() != null) {
+            branch.setEcoCertified(request.getEcoCertified());
+        }
+        if (request.getEcoTags() != null) {
+            branch.setEcoTags(request.getEcoTags());
+        }
+        if (request.getEcoScore() != null) {
+            branch.setEcoScore(request.getEcoScore());
+        }
+
         Branch updatedBranch = branchRepo.save(branch);
         return ResponseEntity.ok(mapToBranchResponseDto(updatedBranch));
     }
@@ -198,6 +200,9 @@ public class BranchService {
         dto.setAddress(branch.getAddress());
         dto.setCurrency(branch.getCurrency());
         dto.setCheckOutTime(branch.getCheckOutTime());
+        dto.setEcoCertified(branch.getEcoCertified());
+        dto.setEcoTags(branch.getEcoTags());
+        dto.setEcoScore(branch.getEcoScore());
 
         if (branch.getHotel() != null) {
             dto.setHotelId(branch.getHotel().getId());
@@ -229,21 +234,7 @@ public class BranchService {
                 .amenities(room.getAmenities())
                 .images(room.getImages())
                 .publicIds(room.getPublicIds())
-                .build();
-    }
-
-    private ReviewResponse toReviewResponse(Review review) {
-        String name = review.getUser().getFirstName()
-                + " " + review.getUser().getLastName();
-        return ReviewResponse.builder()
-                .id(review.getId())
-                .branchId(review.getBranch().getId())
-                .userId(review.getUser().getId())
-                .reviewerName(name)
-                .rating(review.getRating())
-                .comment(review.getComment())
-                .isVerified(review.getIsVerified())
-                .createdAt(review.getCreatedAt())
+                .tags(room.getTags())
                 .build();
     }
 

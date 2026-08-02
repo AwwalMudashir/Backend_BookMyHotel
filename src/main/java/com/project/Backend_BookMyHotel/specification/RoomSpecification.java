@@ -5,6 +5,7 @@ import com.project.Backend_BookMyHotel.domain.Branch;
 import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.BookingStatus;
+import com.project.Backend_BookMyHotel.dto.RoomTag;
 import jakarta.persistence.criteria.Fetch;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
@@ -18,6 +19,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class RoomSpecification {
 
@@ -36,7 +38,7 @@ public class RoomSpecification {
             Integer maxOccupancy,
             Long hotelId
     ) {
-        return buildSearchSpec(checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelId, null);
+        return buildSearchSpec(checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelId, null, null);
     }
 
     // priceRangesByCurrency: when non-empty, price filtering is done per branch.currency using
@@ -44,6 +46,8 @@ public class RoomSpecification {
     // pricePerNight — rooms are priced in their branch's native currency, so a raw comparison
     // across branches with different currencies (e.g. GBP vs AED) is meaningless. Pass null/empty
     // to fall back to the raw, currency-unaware comparison (backward-compatible default).
+    // tags: when non-empty, only rooms carrying EVERY requested tag match (AND semantics) —
+    // e.g. filtering for [ECO_FRIENDLY, WORK_FRIENDLY] returns rooms that are both, not either.
     public static Specification<Room> buildSearchSpec(
             LocalDate checkIn,
             LocalDate checkOut,
@@ -54,7 +58,8 @@ public class RoomSpecification {
             String roomType,
             Integer maxOccupancy,
             Long hotelId,
-            Map<String, CurrencyPriceRange> priceRangesByCurrency
+            Map<String, CurrencyPriceRange> priceRangesByCurrency,
+            Set<RoomTag> tags
     ) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -112,7 +117,17 @@ public class RoomSpecification {
                 predicates.add(cb.equal(hotelJoin.get("id"), hotelId));
             }
 
-            // 5. CRITICAL OVERLAP CONDITION: Exclude rooms with overlapping CONFIRMED bookings
+            // 5. Room Tag Filters — a separate join per requested tag, each constrained to that
+            // one tag value, so a room only survives when it has a matching row for every join
+            // (AND semantics), not just any one of them.
+            if (tags != null && !tags.isEmpty()) {
+                for (RoomTag tag : tags) {
+                    Join<Room, RoomTag> tagJoin = root.join("tags", JoinType.INNER);
+                    predicates.add(cb.equal(tagJoin, tag));
+                }
+            }
+
+            // 6. CRITICAL OVERLAP CONDITION: Exclude rooms with overlapping CONFIRMED bookings
             if (checkIn != null && checkOut != null) {
                 Subquery<Long> bookingSubquery = query.subquery(Long.class);
                 Root<Booking> bookingRoot = bookingSubquery.from(Booking.class);

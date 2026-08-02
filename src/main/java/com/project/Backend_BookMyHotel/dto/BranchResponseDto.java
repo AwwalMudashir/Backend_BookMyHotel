@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalTime;
+import java.util.List;
 
 @Data
 @AllArgsConstructor
@@ -19,4 +20,7 @@ public class BranchResponseDto {
     private String address;
     private String currency;
     private LocalTime checkOutTime;
+    private Boolean ecoCertified;
+    private List<String> ecoTags;
+    private Integer ecoScore;
 }

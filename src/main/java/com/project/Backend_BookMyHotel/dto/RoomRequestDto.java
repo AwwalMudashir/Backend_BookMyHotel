@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.Set;
 
 @Data
 @AllArgsConstructor
@@ -14,4 +15,5 @@ public class RoomRequestDto {
     private BigDecimal pricePerNight;
     private Long roomTypeId;
     private Map<String, Object> amenities;
+    private Set<RoomTag> tags;
 }

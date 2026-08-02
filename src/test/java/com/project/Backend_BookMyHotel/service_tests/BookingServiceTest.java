@@ -15,6 +15,7 @@ import com.project.Backend_BookMyHotel.dto.DiscountType;
 import com.project.Backend_BookMyHotel.dto.PromotionBreakdownResponse;
 import com.project.Backend_BookMyHotel.dto.Role;
 import com.project.Backend_BookMyHotel.dto.RoomPriceResponse;
+import com.project.Backend_BookMyHotel.dto.RoomTag;
 import com.project.Backend_BookMyHotel.repository.BookingRepository;
 import com.project.Backend_BookMyHotel.repository.PromotionRepository;
 import com.project.Backend_BookMyHotel.repository.RoomRepository;
@@ -38,12 +39,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @ExtendWith(MockitoExtension.class)
 public class BookingServiceTest {
@@ -129,6 +132,10 @@ public class BookingServiceTest {
         service.setBranch(branch);
         service.setName("Spa");
         service.setPrice(BigDecimal.valueOf(50));
+
+        // @Value-injected fields aren't populated by Mockito's @InjectMocks, so this has to be
+        // set manually — matches the eco.points.per-booking=5 default in application-dev.properties.
+        ReflectionTestUtils.setField(bookingService, "ecoPointsPerBooking", 5);
     }
 
     @Test
@@ -378,6 +385,51 @@ public class BookingServiceTest {
     }
 
     @Test
+    void cancelBooking_WhenCustomerCancelsOnCheckInDay_ReturnsBadRequest() {
+        booking.setCheckIn(LocalDate.now());
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+
+        ResponseEntity<?> response = bookingService.cancelBooking(50L, 1L, Role.CUSTOMER);
+
+        Assertions.assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Assertions.assertEquals(BookingStatus.PENDING, booking.getStatus());
+        Mockito.verify(bookingRepo, Mockito.never()).save(Mockito.any(Booking.class));
+        Mockito.verify(paymentService, Mockito.never()).initiateRefund(Mockito.anyLong());
+    }
+
+    @Test
+    void cancelBooking_WhenCustomerCancelsMidStay_ReturnsBadRequest() {
+        // Check-in was 2 days ago, check-out is still ahead — the guest is mid-stay, which is an
+        // early-checkout situation, not a cancellation.
+        booking.setCheckIn(LocalDate.now().minusDays(2));
+        booking.setCheckOut(LocalDate.now().plusDays(1));
+        booking.setStatus(BookingStatus.CONFIRMED);
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+
+        ResponseEntity<?> response = bookingService.cancelBooking(50L, 1L, Role.CUSTOMER);
+
+        Assertions.assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Assertions.assertEquals(BookingStatus.CONFIRMED, booking.getStatus());
+        Mockito.verify(bookingRepo, Mockito.never()).save(Mockito.any(Booking.class));
+    }
+
+    @Test
+    void cancelBooking_WhenAdminCancelsAfterCheckInHasPassed_Succeeds() {
+        // Staff retain override capability for exceptional cases (complaints, fraud, goodwill
+        // refunds) even though customers are bound by the check-in cutoff.
+        booking.setCheckIn(LocalDate.now().minusDays(2));
+        booking.setCheckOut(LocalDate.now().plusDays(1));
+        booking.setStatus(BookingStatus.CONFIRMED);
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> response = bookingService.cancelBooking(50L, 999L, Role.ADMIN);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        Assertions.assertEquals(BookingStatus.CANCELLED, booking.getStatus());
+    }
+
+    @Test
     void confirmBooking_WhenPending_SendsConfirmationEmailToBookingOwner() {
         Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
         Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -445,5 +497,148 @@ public class BookingServiceTest {
         Assertions.assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         Mockito.verify(resendEmailService, Mockito.never())
                 .sendEmail(Mockito.anyString(), Mockito.anyString(), Mockito.anyString());
+    }
+
+    @Test
+    void confirmBooking_WhenRoomIsEcoFriendly_AwardsEcoPointsToUser() {
+        room.setTags(Set.of(RoomTag.ECO_FRIENDLY));
+        customer.setEcoPoints(10); // starts with some points already, to prove it's additive not a reset
+
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+        Mockito.when(notificationService.bookingConfirmationTemplate(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                .thenReturn("<html>confirmation</html>");
+
+        ResponseEntity<?> response = bookingService.confirmBooking(50L);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        BookingResponse body = (BookingResponse) response.getBody();
+        Assertions.assertEquals(5, body.getEcoPointsEarned());
+        Assertions.assertEquals(15, customer.getEcoPoints());
+        Assertions.assertEquals(5, booking.getEcoPointsEarned());
+        Mockito.verify(userRepository).save(customer);
+    }
+
+    @Test
+    void confirmBooking_WhenRoomIsNotEcoFriendly_NoPointsAwarded() {
+        // room.tags defaults to an empty set (see setUp) — not tagged ECO_FRIENDLY.
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+        Mockito.when(notificationService.bookingConfirmationTemplate(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                .thenReturn("<html>confirmation</html>");
+
+        ResponseEntity<?> response = bookingService.confirmBooking(50L);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        BookingResponse body = (BookingResponse) response.getBody();
+        Assertions.assertEquals(0, body.getEcoPointsEarned());
+        Assertions.assertEquals(0, customer.getEcoPoints());
+        Mockito.verify(userRepository, Mockito.never()).save(Mockito.any(User.class));
+    }
+
+    @Test
+    void cancelBooking_WhenConfirmedEcoBookingCancelled_RevokesEcoPoints() {
+        booking.setStatus(BookingStatus.CONFIRMED);
+        booking.setEcoPointsEarned(5);
+        customer.setEcoPoints(5);
+
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> response = bookingService.cancelBooking(50L, 1L, Role.CUSTOMER);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        Assertions.assertEquals(0, customer.getEcoPoints());
+        Assertions.assertEquals(0, booking.getEcoPointsEarned());
+        Mockito.verify(userRepository).save(customer);
+    }
+
+    @Test
+    void cancelBooking_WhenPendingNonEcoBookingCancelled_LeavesEcoPointsUntouched() {
+        // Booking was never confirmed, so it never earned any points to claw back — cancelling a
+        // still-PENDING booking should be a no-op for eco points.
+        customer.setEcoPoints(10);
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> response = bookingService.cancelBooking(50L, 1L, Role.CUSTOMER);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        Assertions.assertEquals(10, customer.getEcoPoints());
+        Mockito.verify(userRepository, Mockito.never()).save(Mockito.any(User.class));
+    }
+
+    @Test
+    void updateReservationStatus_WhenBookingMissing_ThrowsNoSuchElementException() {
+        Mockito.when(bookingRepo.existsById(50L)).thenReturn(false);
+
+        Assertions.assertThrows(java.util.NoSuchElementException.class,
+                () -> bookingService.updateReservationStatus(50L, BookingStatus.CONFIRMED, 999L));
+    }
+
+    @Test
+    void updateReservationStatus_Confirmed_DelegatesToConfirmBookingWithSameSideEffects() {
+        Mockito.when(bookingRepo.existsById(50L)).thenReturn(true);
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+        Mockito.when(notificationService.bookingConfirmationTemplate(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                .thenReturn("<html>confirmation</html>");
+
+        ResponseEntity<?> response = bookingService.updateReservationStatus(50L, BookingStatus.CONFIRMED, 999L);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        Assertions.assertEquals(BookingStatus.CONFIRMED, booking.getStatus());
+        Mockito.verify(resendEmailService).sendEmail(Mockito.eq("guest@example.com"), Mockito.anyString(), Mockito.anyString());
+    }
+
+    @Test
+    void updateReservationStatus_Cancelled_DelegatesToCancelBookingBypassingOwnershipCheck() {
+        // adminUserId (999L) is not the booking owner (1L) — an admin override must still succeed,
+        // unlike the equivalent CUSTOMER-role call which cancelBooking_WhenDifferentCustomerAttempts
+        // above proves gets rejected.
+        Mockito.when(bookingRepo.existsById(50L)).thenReturn(true);
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> response = bookingService.updateReservationStatus(50L, BookingStatus.CANCELLED, 999L);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        Assertions.assertEquals(BookingStatus.CANCELLED, booking.getStatus());
+        Mockito.verify(paymentService).initiateRefund(50L);
+    }
+
+    @Test
+    void updateReservationStatus_Pending_ReturnsBadRequestAndLeavesBookingUntouched() {
+        Mockito.when(bookingRepo.existsById(50L)).thenReturn(true);
+
+        ResponseEntity<?> response = bookingService.updateReservationStatus(50L, BookingStatus.PENDING, 999L);
+
+        Assertions.assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Mockito.verify(bookingRepo, Mockito.never()).save(Mockito.any(Booking.class));
+    }
+
+    @Test
+    void getReservationsForAdmin_MapsRepositoryPageToBookingResponsePage() {
+        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(0, 20);
+        org.springframework.data.domain.Page<Booking> repoPage =
+                new org.springframework.data.domain.PageImpl<>(List.of(booking), pageable, 1);
+
+        Mockito.when(bookingRepo.findAll(
+                        Mockito.<org.springframework.data.jpa.domain.Specification<Booking>>any(),
+                        Mockito.eq(pageable)))
+                .thenReturn(repoPage);
+
+        org.springframework.data.domain.Page<BookingResponse> result =
+                bookingService.getReservationsForAdmin(1000L, null, null, pageable);
+
+        Assertions.assertEquals(1, result.getTotalElements());
+        Assertions.assertEquals(50L, result.getContent().get(0).getId());
+        Assertions.assertEquals(BookingStatus.PENDING, result.getContent().get(0).getStatus());
     }
 }

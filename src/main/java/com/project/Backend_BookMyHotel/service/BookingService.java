@@ -11,12 +11,17 @@ import com.project.Backend_BookMyHotel.repository.PromotionRepository;
 import com.project.Backend_BookMyHotel.repository.RoomRepository;
 import com.project.Backend_BookMyHotel.repository.ServiceRepository;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
+import com.project.Backend_BookMyHotel.specification.BookingSpecification;
 import org.apache.coyote.BadRequestException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -34,6 +39,8 @@ import java.util.UUID;
 
 @Service
 public class BookingService {
+
+    private static final Logger log = LoggerFactory.getLogger(BookingService.class);
 
     @Autowired
     private BookingRepository bookingRepo;
@@ -70,7 +77,8 @@ public class BookingService {
     @Autowired
     private PaymentService paymentService;
 
-//    private PaymentService paymentService;
+    @Value("${eco.points.per-booking:5}")
+    private int ecoPointsPerBooking;
 
     /*
      What @CacheEvict does: The moment createBooking() or cancelBooking() runs successfully,
@@ -176,6 +184,7 @@ public class BookingService {
                 .reference(reference)
                 .totalPrice(savedBooking.getTotalPrice())
                 .promoCode(appliedPromoCode)
+                .ecoPointsEarned(savedBooking.getEcoPointsEarned())
                 .createdAt(savedBooking.getCreatedAt())
                 .priceBreakdown(BookingResponse.PriceBreakdown.builder()
                         .basePrice(basePrice)
@@ -196,6 +205,19 @@ public class BookingService {
         }
 
         booking.setStatus(BookingStatus.CONFIRMED);
+
+        // Eco points: awarded once, here at confirmation (not at creation, so a PENDING booking
+        // that never gets paid can't farm points), for a room tagged eco-friendly. Recorded on
+        // the booking itself so cancelBooking() can claw back exactly this amount later rather
+        // than guessing how many points a cancelled booking had contributed.
+        if (booking.getRoom().getTags() != null && booking.getRoom().getTags().contains(RoomTag.ECO_FRIENDLY)) {
+            booking.setEcoPointsEarned(ecoPointsPerBooking);
+            User bookingUser = booking.getUser();
+            int currentPoints = bookingUser.getEcoPoints() != null ? bookingUser.getEcoPoints() : 0;
+            bookingUser.setEcoPoints(currentPoints + ecoPointsPerBooking);
+            userRepository.save(bookingUser);
+        }
+
         Booking updated = bookingRepo.save(booking);
 
         // Increment usage on whichever promo is actually attached to this booking — reading it
@@ -218,13 +240,22 @@ public class BookingService {
                 booking.getRoom().getBranch().getCurrency()
         );
 
-        System.out.println("HTML template built, sending email");
-        resendEmailService.sendEmail(
-                booking.getUser().getEmail(),
-                "Confirmation of Booked Room",
-                html
-        );
-        System.out.println("Email Sent successfully");
+        // This runs in the same transaction as the payment/booking status writes above (this method
+        // is called directly from PaymentService.confirmPayment() inside the webhook handler). An
+        // uncaught exception here — e.g. Resend's API rejecting the send — would roll back the
+        // whole transaction and silently undo a real, already-succeeded Stripe payment. A failed
+        // confirmation email is not worth losing that for, so it's logged and swallowed instead.
+        try {
+            System.out.println("HTML template built, sending email");
+            resendEmailService.sendEmail(
+                    booking.getUser().getEmail(),
+                    "Confirmation of Booked Room",
+                    html
+            );
+            System.out.println("Email Sent successfully");
+        } catch (Exception e) {
+            log.error("Failed to send booking confirmation email for booking {}: {}", booking.getId(), e.getMessage(), e);
+        }
 
         return mapToBookingResponse(updated);
     }
@@ -245,7 +276,26 @@ public class BookingService {
             return ResponseEntity.badRequest().body("Booking has already been cancelled.");
         }
 
+        // Cancellation window: standard hotel/OTA practice closes cancellation at check-in — not
+        // same-day, and never mid-stay (that's an early checkout / no-show, a different operation
+        // with different refund rules, not handled by this endpoint). Staff can still override for
+        // exceptional cases (complaints, fraud, goodwill refunds) — only customers are bound by it.
+        if ("CUSTOMER".equalsIgnoreCase(userRole.toString()) && !booking.getCheckIn().isAfter(LocalDate.now())) {
+            return ResponseEntity.badRequest().body("Bookings can only be cancelled before the check-in date.");
+        }
+
         booking.setStatus(BookingStatus.CANCELLED);
+
+        // Claw back eco points this booking previously earned — only fires if it had already
+        // been confirmed (a still-PENDING booking never had any awarded in the first place).
+        if (booking.getEcoPointsEarned() != null && booking.getEcoPointsEarned() > 0) {
+            User bookingUser = booking.getUser();
+            int currentPoints = bookingUser.getEcoPoints() != null ? bookingUser.getEcoPoints() : 0;
+            bookingUser.setEcoPoints(Math.max(0, currentPoints - booking.getEcoPointsEarned()));
+            userRepository.save(bookingUser);
+            booking.setEcoPointsEarned(0);
+        }
+
         bookingRepo.save(booking);
 
         // No-op if this booking was never actually paid for (most cancellations are of PENDING
@@ -378,6 +428,7 @@ public class BookingService {
             response.setStatus(booking.getStatus());
             response.setTotalPrice(booking.getTotalPrice());
             response.setPromoCode(promoCodeOf(booking));
+            response.setEcoPointsEarned(booking.getEcoPointsEarned());
             response.setCreatedAt(booking.getCreatedAt());
             return response;
         });
@@ -428,6 +479,7 @@ public class BookingService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
+                .ecoPointsEarned(booking.getEcoPointsEarned())
                 .createdAt(booking.getCreatedAt())
                 .services(services)
                 .payments(payments)
@@ -440,7 +492,11 @@ public class BookingService {
     }
 
     private ResponseEntity<BookingResponse> mapToBookingResponse(Booking booking) {
-        return ResponseEntity.ok(BookingResponse.builder()
+        return ResponseEntity.ok(toBookingResponseDto(booking));
+    }
+
+    private BookingResponse toBookingResponseDto(Booking booking) {
+        return BookingResponse.builder()
                 .id(booking.getId())
                 .roomId(booking.getRoom().getId())
                 .userId(booking.getUser().getId())
@@ -449,8 +505,34 @@ public class BookingService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
+                .ecoPointsEarned(booking.getEcoPointsEarned())
                 .createdAt(booking.getCreatedAt())
-                .build());
+                .build();
+    }
+
+    // Admin reservation list: any combination of hotel/date/status, or none at all.
+    @Transactional(readOnly = true)
+    public Page<BookingResponse> getReservationsForAdmin(Long hotelId, LocalDate date, BookingStatus status, Pageable pageable) {
+        Specification<Booking> spec = BookingSpecification.buildAdminFilterSpec(hotelId, date, status);
+        return bookingRepo.findAll(spec, pageable).map(this::toBookingResponseDto);
+    }
+
+    // Admin status override. CONFIRMED/CANCELLED delegate to the same methods the customer-facing
+    // and webhook-driven flows use, so an admin-driven change carries the same side effects (eco
+    // points, promo usage, refund initiation, confirmation email) — just without the ownership and
+    // cancellation-window checks, which only apply when the caller's role is CUSTOMER. Reverting to
+    // PENDING isn't supported: there's no safe way to unwind those side effects once applied.
+    @Transactional
+    public ResponseEntity<?> updateReservationStatus(Long bookingId, BookingStatus newStatus, Long adminUserId) {
+        if (!bookingRepo.existsById(bookingId)) {
+            throw new NoSuchElementException("Booking not found with ID: " + bookingId);
+        }
+
+        return switch (newStatus) {
+            case CONFIRMED -> confirmBooking(bookingId);
+            case CANCELLED -> cancelBooking(bookingId, adminUserId, Role.ADMIN);
+            case PENDING -> ResponseEntity.badRequest().body("Reservations cannot be reverted to PENDING.");
+        };
     }
 
     private BookingResponse toBookingResponseWithServices(Booking booking) {
@@ -475,6 +557,7 @@ public class BookingService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
+                .ecoPointsEarned(booking.getEcoPointsEarned())
                 .services(services)
                 .createdAt(booking.getCreatedAt())
                 .build();

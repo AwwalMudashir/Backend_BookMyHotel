@@ -26,6 +26,9 @@ public class AuthController {
     private UserService userService;
 
     @Autowired
+    private com.project.Backend_BookMyHotel.service.GoogleAuthService googleAuthService;
+
+    @Autowired
     private RefreshTokenRepository refreshTokenRepo;
 
     @PostMapping("/register")
@@ -48,6 +51,11 @@ public class AuthController {
         return userService.login(request);
     }
 
+    @PostMapping("/google")
+    public ResponseEntity<?> googleLogin(@RequestBody GoogleLoginRequest request) {
+        return googleAuthService.googleLogin(request);
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<?> refreshToken(@RequestBody TokenRefreshRequest request) {
         return userService.refreshToken(request);
@@ -57,6 +65,13 @@ public class AuthController {
     public ResponseEntity<?> getCurrentUser(Authentication authentication) {
        return userService.getCurrentUser(authentication);
     }
+
+    @GetMapping("/me/points")
+    public ResponseEntity<?> getCurrentUserPoints(Authentication authentication) {
+        return userService.getCurrentUserPoints(authentication);
+    }
+
+
 
     @PutMapping("/me")
     public ResponseEntity<?> updateCurrentUser(Authentication authentication, @RequestBody UpdateProfileDto updateDto) {

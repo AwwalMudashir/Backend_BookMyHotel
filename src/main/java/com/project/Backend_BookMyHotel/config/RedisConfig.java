@@ -32,6 +32,9 @@ public class RedisConfig {
         Map<String, RedisCacheConfiguration> cacheConfigurations = new HashMap<>();
         cacheConfigurations.put("availability", defaultConfig.entryTtl(Duration.ofMinutes(5)));
         cacheConfigurations.put("exchange-rates", defaultConfig.entryTtl(Duration.ofHours(24)));
+        // Kept fresh by @CachePut on every review write (create/delete); the TTL here is just a
+        // self-healing fallback in case some future write path forgets to invalidate it.
+        cacheConfigurations.put("branch-ratings", defaultConfig.entryTtl(Duration.ofHours(1)));
 
         // 4. Build and return the CacheManager bean
         return RedisCacheManager.builder(connectionFactory)

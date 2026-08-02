@@ -20,10 +20,6 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
     @Query("SELECT b FROM Branch b LEFT JOIN FETCH b.rooms WHERE b.id = :id")
     Optional<Branch> findByIdWithRooms(@Param("id") Long id);
 
-    // Fetch branch with reviews eagerly
-    @Query("SELECT b FROM Branch b LEFT JOIN FETCH b.reviews WHERE b.id = :id")
-    Optional<Branch> findByIdWithReviews(@Param("id") Long id);
-
     // Fetch branch with services eagerly
     @Query("SELECT b FROM Branch b LEFT JOIN FETCH b.services WHERE b.id = :id")
     Optional<Branch> findByIdWithServices(@Param("id") Long id);
