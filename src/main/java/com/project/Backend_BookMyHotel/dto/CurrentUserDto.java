@@ -1,6 +1,7 @@
 package com.project.Backend_BookMyHotel.dto;
 
 import com.project.Backend_BookMyHotel.domain.Booking;
+import com.project.Backend_BookMyHotel.dto.BookingDto;
 import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.domain.Review;
 import jakarta.persistence.*;
@@ -22,7 +23,7 @@ public class CurrentUserDto {
     private String gender;
     private Role role;
     private Hotel managedHotel;
-    private List<Booking> bookings;
+    private List<BookingDto> bookings;
     private List<Review> reviews;
     private Integer ecoPoints;
 }

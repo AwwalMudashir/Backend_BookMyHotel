@@ -306,6 +306,18 @@ public class UserService {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
         }
 
+        // Map domain Bookings to lightweight DTOs to avoid recursive serialization of User <-> Booking
+        List<BookingDto> bookingDtos = user.getBookings() == null ? List.of() : user.getBookings().stream().map(b -> new BookingDto(
+                b.getId(),
+                b.getReference(),
+                b.getCheckIn(),
+                b.getCheckOut(),
+                b.getStatus(),
+                b.getTotalPrice(),
+                b.getEcoPointsEarned(),
+                b.getCreatedAt()
+        )).toList();
+
         CurrentUserDto dto = new CurrentUserDto(
                 user.getUserId(),
                 user.getEmail(),
@@ -314,7 +326,7 @@ public class UserService {
                 user.getGender(),
                 user.getRole(),
                 user.getManagedHotel(),
-                user.getBookings(),
+                bookingDtos,
                 user.getReviews(),
                 user.getEcoPoints()
         );
@@ -368,6 +380,17 @@ public class UserService {
         User updatedUser = userRepo.save(user);
 
         // 5. Return the updated user info using your existing CurrentUserDto pattern
+        List<BookingDto> bookingDtos = updatedUser.getBookings() == null ? List.of() : updatedUser.getBookings().stream().map(b -> new BookingDto(
+                b.getId(),
+                b.getReference(),
+                b.getCheckIn(),
+                b.getCheckOut(),
+                b.getStatus(),
+                b.getTotalPrice(),
+                b.getEcoPointsEarned(),
+                b.getCreatedAt()
+        )).toList();
+
         CurrentUserDto responseDto = new CurrentUserDto(
                 updatedUser.getUserId(),
                 updatedUser.getEmail(),
@@ -376,7 +399,7 @@ public class UserService {
                 updatedUser.getGender(),
                 updatedUser.getRole(),
                 updatedUser.getManagedHotel(),
-                updatedUser.getBookings(),
+                bookingDtos,
                 updatedUser.getReviews(),
                 updatedUser.getEcoPoints()
         );
