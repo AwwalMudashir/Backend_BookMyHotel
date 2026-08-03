@@ -214,7 +214,26 @@ public class PaymentService {
                             log.info("Deserialized PaymentIntent {} from event {} — calling confirmPayment", intent.getId(), event.getId());
                             confirmPayment(intent.getId());
                             log.info("Finished confirmPayment for PaymentIntent {}", intent.getId());
-                        }, () -> log.warn("payment_intent.succeeded event {} had no deserializable PaymentIntent", event.getId()));
+                        }, () -> {
+                            // SDK couldn't deserialize the nested object — try fallback parsing of raw JSON
+                            try {
+                                String raw = event.getDataObjectDeserializer().getRawJson();
+                                if (raw != null && !raw.isBlank()) {
+                                    raw = raw.replace("\uFEFF", "");
+                                    Gson gson = new Gson();
+                                    PaymentIntent parsed = gson.fromJson(raw, PaymentIntent.class);
+                                    if (parsed != null && parsed.getId() != null) {
+                                        log.info("Fallback-parsed PaymentIntent {} from raw JSON — calling confirmPayment (event {})", parsed.getId(), event.getId());
+                                        confirmPayment(parsed.getId());
+                                        log.info("Finished confirmPayment for fallback-parsed PaymentIntent {}", parsed.getId());
+                                        return;
+                                    }
+                                }
+                                log.warn("payment_intent.succeeded event {} could not be deserialized by SDK and fallback parse returned null/raw empty", event.getId());
+                            } catch (Exception e) {
+                                log.warn("Failed fallback parse for payment_intent.succeeded event {}: {}", event.getId(), e.getMessage(), e);
+                            }
+                        });
             }
             case "payment_intent.payment_failed" -> {
                 // Client-side failure path — mark the Payment FAILED so frontend shows proper state.
@@ -226,7 +245,26 @@ public class PaymentService {
                             log.info("Deserialized failed PaymentIntent {} from event {} — calling markPaymentFailed", intent.getId(), event.getId());
                             markPaymentFailed(intent.getId());
                             log.info("Finished markPaymentFailed for PaymentIntent {}", intent.getId());
-                        }, () -> log.warn("payment_intent.payment_failed event {} had no deserializable PaymentIntent", event.getId()));
+                        }, () -> {
+                            // Fallback: try to parse raw JSON
+                            try {
+                                String raw = event.getDataObjectDeserializer().getRawJson();
+                                if (raw != null && !raw.isBlank()) {
+                                    raw = raw.replace("\uFEFF", "");
+                                    Gson gson = new Gson();
+                                    PaymentIntent parsed = gson.fromJson(raw, PaymentIntent.class);
+                                    if (parsed != null && parsed.getId() != null) {
+                                        log.info("Fallback-parsed failed PaymentIntent {} from raw JSON — calling markPaymentFailed (event {})", parsed.getId(), event.getId());
+                                        markPaymentFailed(parsed.getId());
+                                        log.info("Finished markPaymentFailed for fallback-parsed PaymentIntent {}", parsed.getId());
+                                        return;
+                                    }
+                                }
+                                log.warn("payment_intent.payment_failed event {} could not be deserialized by SDK and fallback parse returned null/raw empty", event.getId());
+                            } catch (Exception e) {
+                                log.warn("Failed fallback parse for payment_intent.payment_failed event {}: {}", event.getId(), e.getMessage(), e);
+                            }
+                        });
             }
             case "charge.succeeded" -> {
                 // Occasionally Stripe sends charge.* events in addition to payment_intent.* — handle
