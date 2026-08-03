@@ -215,23 +215,39 @@ public class PaymentService {
                             confirmPayment(intent.getId());
                             log.info("Finished confirmPayment for PaymentIntent {}", intent.getId());
                         }, () -> {
-                            // SDK couldn't deserialize the nested object — try fallback parsing of raw JSON
+                            // SDK couldn't deserialize the nested object — try stronger fallbacks.
                             try {
+                                // 1) Try the provided raw JSON for the data.object
                                 String raw = event.getDataObjectDeserializer().getRawJson();
                                 if (raw != null && !raw.isBlank()) {
                                     raw = raw.replace("\uFEFF", "");
                                     Gson gson = new Gson();
-                                    PaymentIntent parsed = gson.fromJson(raw, PaymentIntent.class);
-                                    if (parsed != null && parsed.getId() != null) {
-                                        log.info("Fallback-parsed PaymentIntent {} from raw JSON — calling confirmPayment (event {})", parsed.getId(), event.getId());
-                                        confirmPayment(parsed.getId());
-                                        log.info("Finished confirmPayment for fallback-parsed PaymentIntent {}", parsed.getId());
-                                        return;
+                                    try {
+                                        PaymentIntent parsed = gson.fromJson(raw, PaymentIntent.class);
+                                        if (parsed != null && parsed.getId() != null) {
+                                            log.info("Fallback-parsed PaymentIntent {} from raw JSON — calling confirmPayment (event {})", parsed.getId(), event.getId());
+                                            confirmPayment(parsed.getId());
+                                            log.info("Finished confirmPayment for fallback-parsed PaymentIntent {}", parsed.getId());
+                                            return;
+                                        }
+                                    } catch (Exception e) {
+                                        log.debug("Raw JSON parse as PaymentIntent failed: {}", e.getMessage());
                                     }
                                 }
-                                log.warn("payment_intent.succeeded event {} could not be deserialized by SDK and fallback parse returned null/raw empty", event.getId());
+
+                                // 2) Try parsing the whole Event JSON (more robust) to extract data.object.id
+                                Optional<String> extracted = extractNestedObjectIdFromEvent(event);
+                                if (extracted.isPresent()) {
+                                    String id = extracted.get();
+                                    log.info("Extracted nested id {} from event.toJson() — calling confirmPayment (event {})", id, event.getId());
+                                    confirmPayment(id);
+                                    log.info("Finished confirmPayment for extracted PaymentIntent {}", id);
+                                    return;
+                                }
+
+                                log.warn("payment_intent.succeeded event {} could not be deserialized by SDK and all fallbacks returned empty", event.getId());
                             } catch (Exception e) {
-                                log.warn("Failed fallback parse for payment_intent.succeeded event {}: {}", event.getId(), e.getMessage(), e);
+                                log.warn("Failed fallbacks for payment_intent.succeeded event {}: {}", event.getId(), e.getMessage(), e);
                             }
                         });
             }
@@ -246,23 +262,35 @@ public class PaymentService {
                             markPaymentFailed(intent.getId());
                             log.info("Finished markPaymentFailed for PaymentIntent {}", intent.getId());
                         }, () -> {
-                            // Fallback: try to parse raw JSON
+                            // Fallbacks like in succeeded: raw parse then event.toJson extract
                             try {
                                 String raw = event.getDataObjectDeserializer().getRawJson();
                                 if (raw != null && !raw.isBlank()) {
                                     raw = raw.replace("\uFEFF", "");
                                     Gson gson = new Gson();
-                                    PaymentIntent parsed = gson.fromJson(raw, PaymentIntent.class);
-                                    if (parsed != null && parsed.getId() != null) {
-                                        log.info("Fallback-parsed failed PaymentIntent {} from raw JSON — calling markPaymentFailed (event {})", parsed.getId(), event.getId());
-                                        markPaymentFailed(parsed.getId());
-                                        log.info("Finished markPaymentFailed for fallback-parsed PaymentIntent {}", parsed.getId());
-                                        return;
+                                    try {
+                                        PaymentIntent parsed = gson.fromJson(raw, PaymentIntent.class);
+                                        if (parsed != null && parsed.getId() != null) {
+                                            log.info("Fallback-parsed failed PaymentIntent {} from raw JSON — calling markPaymentFailed (event {})", parsed.getId(), event.getId());
+                                            markPaymentFailed(parsed.getId());
+                                            log.info("Finished markPaymentFailed for fallback-parsed PaymentIntent {}", parsed.getId());
+                                            return;
+                                        }
+                                    } catch (Exception e) {
+                                        log.debug("Raw JSON parse as PaymentIntent failed: {}", e.getMessage());
                                     }
                                 }
-                                log.warn("payment_intent.payment_failed event {} could not be deserialized by SDK and fallback parse returned null/raw empty", event.getId());
+                                Optional<String> extracted = extractNestedObjectIdFromEvent(event);
+                                if (extracted.isPresent()) {
+                                    String id = extracted.get();
+                                    log.info("Extracted nested id {} from event.toJson() — calling markPaymentFailed (event {})", id, event.getId());
+                                    markPaymentFailed(id);
+                                    log.info("Finished markPaymentFailed for extracted PaymentIntent {}", id);
+                                    return;
+                                }
+                                log.warn("payment_intent.payment_failed event {} could not be deserialized by SDK and all fallbacks returned empty", event.getId());
                             } catch (Exception e) {
-                                log.warn("Failed fallback parse for payment_intent.payment_failed event {}: {}", event.getId(), e.getMessage(), e);
+                                log.warn("Failed fallbacks for payment_intent.payment_failed event {}: {}", event.getId(), e.getMessage(), e);
                             }
                         });
             }
@@ -422,6 +450,32 @@ public class PaymentService {
         }
         List<Refund> refunds = charge.getRefunds().getData();
         return refunds.isEmpty() ? Optional.empty() : Optional.of(refunds.get(refunds.size() - 1).getId());
+    }
+
+    // When SDK deserialization fails, extract data.object.id from the full Event JSON as a last-resort.
+    private Optional<String> extractNestedObjectIdFromEvent(Event event) {
+        try {
+            String json = event.toJson();
+            if (json == null || json.isBlank()) {
+                return Optional.empty();
+            }
+            com.google.gson.JsonElement root = com.google.gson.JsonParser.parseString(json);
+            if (!root.isJsonObject()) return Optional.empty();
+            com.google.gson.JsonObject rootObj = root.getAsJsonObject();
+            if (!rootObj.has("data")) return Optional.empty();
+            com.google.gson.JsonObject data = rootObj.getAsJsonObject("data");
+            if (!data.has("object")) return Optional.empty();
+            com.google.gson.JsonElement objEl = data.get("object");
+            if (objEl.isJsonObject()) {
+                com.google.gson.JsonObject obj = objEl.getAsJsonObject();
+                if (obj.has("id") && !obj.get("id").isJsonNull()) {
+                    return Optional.of(obj.get("id").getAsString());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("extractNestedObjectIdFromEvent failed: {}", e.getMessage());
+        }
+        return Optional.empty();
     }
 
     // Called from BookingService.cancelBooking(). Deliberately a no-op (not an error) when the
