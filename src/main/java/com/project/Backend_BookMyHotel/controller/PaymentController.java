@@ -53,11 +53,6 @@ public class PaymentController {
             @RequestHeader("Stripe-Signature") String signatureHeader
     ) {
         Event event;
-        // 1) Verify the Stripe-Signature header before doing anything else. If this fails we
-        //    must return 400 so Stripe knows the webhook was not authenticated.
-        // Debug: log minimal payload info (length and a short prefix) to help diagnose
-        // cases where the request body is unexpectedly empty or mangled by intermediate
-        // filters. This is debug-level so it won't show in normal INFO logs.
         if (log.isDebugEnabled()) {
             int len = payload == null ? 0 : payload.length();
             String prefix = payload == null ? "" : payload.substring(0, Math.min(1000, payload.length())).replaceAll("\\s+", " ");
@@ -71,9 +66,6 @@ public class PaymentController {
             return ResponseEntity.badRequest().body("Invalid signature");
         }
 
-        // 2) Hand the fully-verified Event object to the service. Log entry and exit so you can
-        //    see in application logs whether processing reached the service and whether it
-        //    completed without throwing.
         try {
             log.info("Controller handing webhook event {} to PaymentService", event.getId());
             paymentService.handleWebhookEvent(event);
