@@ -27,9 +27,12 @@ public interface BranchRepository extends JpaRepository<Branch, Long> {
     // Every distinct currency in play for a search's branches, so a currency-aware price filter
     // knows which currencies to convert minPrice/maxPrice into. city/country are optional filters,
     // matching how the search specification itself narrows branches.
-    @Query("SELECT DISTINCT b.currency FROM Branch b " +
-            "WHERE (:city IS NULL OR LOWER(b.city) = LOWER(:city)) " +
-            "AND (:country IS NULL OR LOWER(b.country) = LOWER(:country))")
+    // Use an explicit PostgreSQL cast to text so LOWER(...) works even if the physical column
+    // has an unexpected non-text type in the current schema.
+    @Query(value = "SELECT DISTINCT currency FROM branches " +
+            "WHERE (:city IS NULL OR LOWER(CAST(city AS text)) = LOWER(:city)) " +
+            "AND (:country IS NULL OR LOWER(CAST(country AS text)) = LOWER(:country))",
+            nativeQuery = true)
     List<String> findDistinctCurrencies(@Param("city") String city, @Param("country") String country);
 
 }

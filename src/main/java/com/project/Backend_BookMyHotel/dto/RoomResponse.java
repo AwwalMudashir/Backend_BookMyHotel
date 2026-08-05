@@ -16,6 +16,8 @@ import java.util.Set;
 @Builder
 public class RoomResponse {
     private Long id;
+    // New: public-facing random identifier for the room (room.roomId)
+    private String roomId;
     private Long branchId;
     private String roomType;
     private String description;
@@ -24,6 +26,7 @@ public class RoomResponse {
     private String currency;
     private Map<String, Object> amenities;
     private List<String> images;
+    // Cloudinary image public IDs used to delete images
     private List<String> publicIds;
     private Set<RoomTag> tags;
 }

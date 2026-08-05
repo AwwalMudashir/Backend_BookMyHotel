@@ -6,6 +6,7 @@ import com.project.Backend_BookMyHotel.dto.AnalyticsSummaryResponse;
 import com.project.Backend_BookMyHotel.dto.BookingResponse;
 import com.project.Backend_BookMyHotel.dto.BookingStatus;
 import com.project.Backend_BookMyHotel.dto.HotelAnalyticsResponse;
+import com.project.Backend_BookMyHotel.exception.UnsupportedCurrencyException;
 import com.project.Backend_BookMyHotel.repository.BookingRepository;
 import com.project.Backend_BookMyHotel.repository.HotelRepository;
 import com.project.Backend_BookMyHotel.repository.ReviewRepository;
@@ -36,6 +37,9 @@ public class AnalyticsService {
 
     @Autowired
     private HotelRepository hotelRepository;
+
+    @Autowired
+    private ExchangeRateService exchangeRateService;
 
     @Cacheable(value = "branch-ratings", key = "#branchId")
     public BigDecimal getBranchAverageRating(Long branchId) {
@@ -84,9 +88,43 @@ public class AnalyticsService {
     }
 
     @Transactional(readOnly = true)
+    public BigDecimal getRoomRevenueUsd(Long hotelId, LocalDate startDate, LocalDate endDate) {
+        return bookingRepository.findByHotelAndStatusAndCheckInBetween(hotelId, BookingStatus.CONFIRMED, startDate, endDate)
+                .stream()
+                .map(this::convertBookingRevenueToUsd)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal convertBookingRevenueToUsd(Booking booking) {
+        BigDecimal amount = booking.getTotalPrice();
+        if (amount == null) {
+            return BigDecimal.ZERO;
+        }
+
+        String currency = null;
+        if (booking.getRoom() != null && booking.getRoom().getBranch() != null) {
+            currency = booking.getRoom().getBranch().getCurrency();
+        }
+
+        if (currency == null || currency.isBlank()) {
+            return amount;
+        }
+
+        if ("USD".equalsIgnoreCase(currency)) {
+            return amount;
+        }
+
+        try {
+            return exchangeRateService.convert(amount, currency, "USD");
+        } catch (UnsupportedCurrencyException ex) {
+            return amount;
+        }
+    }
+
+    @Transactional(readOnly = true)
     public BigDecimal getAverageDailyRate(Long hotelId, LocalDate startDate, LocalDate endDate) {
         long roomNights = getRoomNightsBooked(hotelId, startDate, endDate);
-        BigDecimal revenue = getRoomRevenue(hotelId, startDate, endDate);
+        BigDecimal revenue = getRoomRevenueUsd(hotelId, startDate, endDate);
         return computeAdr(revenue, roomNights);
     }
 
@@ -103,7 +141,7 @@ public class AnalyticsService {
     public ResponseEntity<?> getOverallSummary(LocalDate startDate, LocalDate endDate) {
         LocalDate[] range = resolveDateRange(startDate, endDate);
         long roomNights = getRoomNightsBooked(null, range[0], range[1]);
-        BigDecimal revenue = getRoomRevenue(null, range[0], range[1]);
+        BigDecimal revenue = getRoomRevenueUsd(null, range[0], range[1]);
 
         return ResponseEntity.ok(AnalyticsSummaryResponse.builder()
                 .startDate(range[0])
@@ -111,6 +149,7 @@ public class AnalyticsService {
                 .roomNightsBooked(roomNights)
                 .revenue(revenue)
                 .averageDailyRate(computeAdr(revenue, roomNights))
+                .currency("USD")
                 .build());
     }
 
@@ -121,7 +160,7 @@ public class AnalyticsService {
 
         LocalDate[] range = resolveDateRange(startDate, endDate);
         long roomNights = getRoomNightsBooked(hotelId, range[0], range[1]);
-        BigDecimal revenue = getRoomRevenue(hotelId, range[0], range[1]);
+        BigDecimal revenue = getRoomRevenueUsd(hotelId, range[0], range[1]);
 
         return ResponseEntity.ok(HotelAnalyticsResponse.builder()
                 .hotelId(hotel.getId())
@@ -131,6 +170,7 @@ public class AnalyticsService {
                 .roomNightsBooked(roomNights)
                 .revenue(revenue)
                 .averageDailyRate(computeAdr(revenue, roomNights))
+                .currency("USD")
                 .build());
     }
 
@@ -150,6 +190,7 @@ public class AnalyticsService {
         return BookingResponse.builder()
                 .id(booking.getId())
                 .roomId(booking.getRoom() != null ? booking.getRoom().getId() : null)
+                .roomPublicId(booking.getRoom() != null ? booking.getRoom().getRoomId() : null)
                 .userId(booking.getUser() != null ? booking.getUser().getId() : null)
                 .checkIn(booking.getCheckIn())
                 .checkOut(booking.getCheckOut())

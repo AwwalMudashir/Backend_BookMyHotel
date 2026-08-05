@@ -34,11 +34,7 @@ public class HotelService {
     }
 
     public ResponseEntity<?> getHotelById(Long id) {
-        Hotel hotel = hotelRepo.findByBranchId(id).orElseThrow(() -> new NoSuchElementException("Hotel ID Not Found"));
-
-        if (hotel == null){
-            return new ResponseEntity<>("No Hotel Found with such id", HttpStatus.BAD_REQUEST);
-        }
+        Hotel hotel = hotelRepo.findById(id).orElseThrow(() -> new NoSuchElementException("Hotel ID Not Found"));
         return new ResponseEntity<>(mapToHotelDetailDto(hotel), HttpStatus.OK);
     }
 

@@ -66,12 +66,12 @@ public class UserService {
         String html = emailTemplateService.otpTemplate(email, otp, 5);
 
         System.out.println("HTML template built, sending email");
-        resendEmailService.sendEmail(
+        boolean sent = resendEmailService.sendEmail(
                 email,
                 "OTP Verification",
                 html
         );
-        System.out.println("Email Sent successfully");
+        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
     }
 
     public ResponseEntity<?> createUser(OnboardDto onboardDto) {
@@ -111,12 +111,16 @@ public class UserService {
         String html = emailTemplateService.userWelcomeTemplate(user.getFirstName());
 
         System.out.println("HTML template built, sending email");
-        resendEmailService.sendEmail(
+        boolean sent = resendEmailService.sendEmail(
                 user.getEmail(),
                 "Registeration Successful",
                 html
         );
-        System.out.println("Email Sent successfully");
+        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
+
+        if (!sent) {
+            return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "welcome_email_failed").body(user);
+        }
 
         return new ResponseEntity<>(user, HttpStatus.CREATED);
     }
@@ -171,12 +175,16 @@ public class UserService {
         );
 
         System.out.println("HTML template built, sending email");
-        resendEmailService.sendEmail(
+        boolean sent = resendEmailService.sendEmail(
                 user.getEmail(),
                 "Welcome Hotel Manager to BMH",
                 html
         );
-        System.out.println("Email Sent successfully");
+        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
+
+        if (!sent) {
+            return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "manager_welcome_email_failed").body(user);
+        }
 
         return new ResponseEntity<>(user, HttpStatus.CREATED);
     }
@@ -222,12 +230,16 @@ public class UserService {
         );
 
         System.out.println("HTML template built, sending email");
-        resendEmailService.sendEmail(
+        boolean sent = resendEmailService.sendEmail(
                 user.getEmail(),
                 "Welcome Admin to BMH",
                 html
         );
-        System.out.println("Email Sent successfully");
+        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
+
+        if (!sent) {
+            return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "admin_welcome_email_failed").body(user);
+        }
 
         return new ResponseEntity<>(user, HttpStatus.CREATED);
     }
@@ -241,6 +253,14 @@ public class UserService {
                     new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
             );
         } catch (Exception e) {
+            if (userRepo.existsByEmail(request.getEmail())){
+                User user = userRepo.findByEmail(request.getEmail());
+
+                if (user.getGoogleId() == null){
+                    err.setStatus(HttpStatus.UNAUTHORIZED);
+                    err.setMessage("This user was created via Google Oauth, Sign in with Google");
+                }
+            }
             err.setStatus(HttpStatus.UNAUTHORIZED);
             err.setMessage("User with this credentials doesn't exist");
             return new ResponseEntity<>(err,HttpStatus.UNAUTHORIZED);

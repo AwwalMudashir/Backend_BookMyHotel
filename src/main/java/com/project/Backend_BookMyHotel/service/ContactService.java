@@ -38,11 +38,15 @@ public class ContactService {
 
         ContactEnquiry saved = contactEnquiryRepository.save(enquiry);
 
-        try {
-            String html = emailTemplateService.contactTemplate(saved.getName(), saved.getEmail(), saved.getMessage());
-            resendEmailService.sendContactEmail(supportEmail, saved.getEmail(), "New Contact Inquiry from " + saved.getName(), html);
-        } catch (Exception e) {
-            log.error("Failed to send contact notification email for enquiry {}: {}", saved.getId(), e.getMessage(), e);
+        String html = emailTemplateService.contactTemplate(saved.getName(), saved.getEmail(), saved.getMessage());
+        boolean emailSent = resendEmailService.sendContactEmail(supportEmail, saved.getEmail(), "New Contact Inquiry from " + saved.getName(), html);
+
+        if (!emailSent) {
+            log.error("Failed to send contact notification email for enquiry {}", saved.getId());
+            return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "contact_notification_failed").body(Map.of(
+                    "message", "Your enquiry has been received. Our support team will get back to you shortly.",
+                    "enquiryId", saved.getId()
+            ));
         }
 
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(

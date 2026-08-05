@@ -15,6 +15,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
     Optional<Payment> findByStripePaymentId(String stripePaymentId);
 
+    Optional<Payment> findByPaymentId(String paymentId);
+
     // A booking can accumulate multiple payment attempts (e.g. a failed one followed by a retry) —
     // this is "whichever attempt happened most recently."
     Optional<Payment> findFirstByBookingIdOrderByIdDesc(Long bookingId);

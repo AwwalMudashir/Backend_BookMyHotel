@@ -14,6 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 public class BranchRequestDto {
+    private Long hotelId;
     private String name;
     private String city;
     private String country;

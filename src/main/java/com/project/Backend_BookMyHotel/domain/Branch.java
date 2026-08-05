@@ -1,5 +1,6 @@
 package com.project.Backend_BookMyHotel.domain;
 
+import com.project.Backend_BookMyHotel.util.PublicIdGenerator;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -19,6 +20,9 @@ public class Branch {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "public_id", unique = true, nullable = false)
+    private String publicId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "hotel_id", nullable = false)
@@ -61,4 +65,11 @@ public class Branch {
 
     @OneToMany(mappedBy = "branch", cascade = CascadeType.ALL)
     private List<Review> reviews;
+
+    @PrePersist
+    protected void generatePublicId() {
+        if (this.publicId == null) {
+            this.publicId = PublicIdGenerator.generate();
+        }
+    }
 }

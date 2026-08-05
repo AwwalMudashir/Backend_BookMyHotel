@@ -128,11 +128,10 @@ public class GoogleAuthService {
         // The account is already persisted above — a failed welcome email (Resend sandbox
         // restriction, network hiccup, etc.) must not turn a successful Google sign-up into a
         // 500 with no JWT for the caller. Same lesson as BookingService.confirmBooking.
-        try {
-            String html = emailTemplateService.userWelcomeTemplate(user.getFirstName());
-            resendEmailService.sendEmail(user.getEmail(), "Registeration Successful", html);
-        } catch (Exception e) {
-            log.error("Failed to send welcome email for Google sign-up {}: {}", user.getEmail(), e.getMessage(), e);
+        String html = emailTemplateService.userWelcomeTemplate(user.getFirstName());
+        boolean sent = resendEmailService.sendEmail(user.getEmail(), "Registeration Successful", html);
+        if (!sent) {
+            log.error("Failed to send welcome email for Google sign-up {}", user.getEmail());
         }
 
         return user;

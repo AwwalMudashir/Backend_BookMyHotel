@@ -6,9 +6,11 @@ import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.BookingStatus;
 import com.project.Backend_BookMyHotel.dto.RoomTag;
+import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Fetch;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 import jakarta.persistence.criteria.Subquery;
@@ -75,10 +77,10 @@ public class RoomSpecification {
 
             // 2. City & Country Filters
             if (city != null && !city.trim().isEmpty()) {
-                predicates.add(cb.equal(cb.lower(branchJoin.get("city")), city.toLowerCase().trim()));
+                predicates.add(cb.equal(lowerText(cb, branchJoin.get("city")), city.toLowerCase().trim()));
             }
             if (country != null && !country.trim().isEmpty()) {
-                predicates.add(cb.equal(cb.lower(branchJoin.get("country")), country.toLowerCase().trim()));
+                predicates.add(cb.equal(lowerText(cb, branchJoin.get("country")), country.toLowerCase().trim()));
             }
 
             // 3. Price Filters
@@ -146,5 +148,9 @@ public class RoomSpecification {
             return cb.and(predicates.toArray(new Predicate[0]));
             // Takes an array or list of individual Predicate objects and combines them with logical AND operators into a single parent predicate:
         };
+    }
+
+    private static Expression<String> lowerText(jakarta.persistence.criteria.CriteriaBuilder cb, Path<?> path) {
+        return cb.lower(path.as(String.class));
     }
 }

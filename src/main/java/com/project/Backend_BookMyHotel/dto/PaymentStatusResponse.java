@@ -14,6 +14,7 @@ import java.time.LocalDateTime;
 @Builder
 public class PaymentStatusResponse {
     private Long bookingId;
+    private String paymentId;
     private String stripePaymentId;
     private PaymentStatus status;
     private BigDecimal amount;

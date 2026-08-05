@@ -231,6 +231,17 @@ class SearchServiceIntegrationTest {
     }
 
     @Test
+    void findDistinctCurrenciesRespectsOptionalLocationFilters() {
+        Hotel hotel = createHotel("Filter Currency Hotel");
+        createBranch(hotel, "Berlin", "DE", "EUR");
+        createBranch(hotel, "Berlin", "DE", "GBP");
+
+        java.util.List<String> currencies = branchRepository.findDistinctCurrencies("Berlin", "DE");
+
+        assertThat(currencies).containsExactlyInAnyOrder("EUR", "GBP");
+    }
+
+    @Test
     void searchByEcoFriendlyTagReturnsOnlyTaggedRooms() {
         Hotel hotel = createHotel("Green Hotel");
         Branch branch = createBranch(hotel, "Berlin", "DE");

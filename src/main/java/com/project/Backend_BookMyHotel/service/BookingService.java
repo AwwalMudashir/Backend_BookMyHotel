@@ -29,12 +29,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.AccessDeniedException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -177,6 +179,7 @@ public class BookingService {
         return new ResponseEntity<>(BookingResponse.builder()
                 .id(savedBooking.getId())
                 .roomId(room.getId())
+                .roomPublicId(room.getRoomId())
                 .userId(user.getId())
                 .checkIn(savedBooking.getCheckIn())
                 .checkOut(savedBooking.getCheckOut())
@@ -245,16 +248,17 @@ public class BookingService {
         // uncaught exception here — e.g. Resend's API rejecting the send — would roll back the
         // whole transaction and silently undo a real, already-succeeded Stripe payment. A failed
         // confirmation email is not worth losing that for, so it's logged and swallowed instead.
-        try {
-            System.out.println("HTML template built, sending email");
-            resendEmailService.sendEmail(
-                    booking.getUser().getEmail(),
-                    "Confirmation of Booked Room",
-                    html
-            );
-            System.out.println("Email Sent successfully");
-        } catch (Exception e) {
-            log.error("Failed to send booking confirmation email for booking {}: {}", booking.getId(), e.getMessage(), e);
+        System.out.println("HTML template built, sending email");
+        boolean sent = resendEmailService.sendEmail(
+                booking.getUser().getEmail(),
+                "Confirmation of Booked Room",
+                html
+        );
+        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
+
+        if (!sent) {
+            log.error("Failed to send booking confirmation email for booking {}", booking.getId());
+            return ResponseEntity.ok().header("X-Email-Failure", "booking_confirmation_email_failed").body(toBookingResponseDto(updated));
         }
 
         return mapToBookingResponse(updated);
@@ -276,12 +280,13 @@ public class BookingService {
             return ResponseEntity.badRequest().body("Booking has already been cancelled.");
         }
 
-        // Cancellation window: standard hotel/OTA practice closes cancellation at check-in — not
-        // same-day, and never mid-stay (that's an early checkout / no-show, a different operation
-        // with different refund rules, not handled by this endpoint). Staff can still override for
-        // exceptional cases (complaints, fraud, goodwill refunds) — only customers are bound by it.
-        if ("CUSTOMER".equalsIgnoreCase(userRole.toString()) && !booking.getCheckIn().isAfter(LocalDate.now())) {
-            return ResponseEntity.badRequest().body("Bookings can only be cancelled before the check-in date.");
+        LocalDate today = LocalDate.now();
+        boolean isEarlyCheckout = !booking.getCheckIn().isAfter(today) && booking.getCheckOut().isAfter(today);
+
+        // Customers can cancel before check-out, including current stays. If the booking has
+        // already reached or passed the checkout date, there is no cancellation action needed.
+        if ("CUSTOMER".equalsIgnoreCase(userRole.toString()) && !booking.getCheckOut().isAfter(today)) {
+            return ResponseEntity.badRequest().body("Bookings can only be cancelled before the checkout date.");
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
@@ -300,7 +305,36 @@ public class BookingService {
 
         // No-op if this booking was never actually paid for (most cancellations are of PENDING
         // bookings that never got past checkout) — see PaymentService.initiateRefund for details.
-        paymentService.initiateRefund(booking.getId());
+        Optional<PaymentService.RefundResult> refundResult = paymentService.initiateRefund(booking.getId());
+
+        String refundAmount = refundResult
+                .map(refund -> refund.currency() + " " + refund.amount().setScale(2, RoundingMode.HALF_UP).toPlainString())
+                .orElse(null);
+
+        String customerName = (booking.getUser().getFirstName() + " " + booking.getUser().getLastName()).trim();
+        String html = notificationService.bookingCancellationTemplate(
+                customerName,
+                booking.getReference(),
+                booking.getRoom().getBranch().getHotel().getName(),
+                booking.getRoom().getBranch().getName(),
+                booking.getRoom().getRoomType(),
+                booking.getCheckIn(),
+                LocalDate.now(),
+                refundAmount,
+                refundResult.isPresent(),
+                isEarlyCheckout
+        );
+
+        boolean sent = resendEmailService.sendEmail(
+                booking.getUser().getEmail(),
+                refundResult.isPresent() ? "Booking Cancelled and Refund Processed" : "Booking Cancelled",
+                html
+        );
+
+        if (!sent) {
+            log.error("Failed to send booking cancellation email for booking {}", booking.getId());
+            return ResponseEntity.ok().header("X-Email-Failure", "booking_cancellation_email_failed").body(toBookingResponseDto(booking));
+        }
 
         // Note: Dates are freed automatically because availability queries filter out CANCELLED bookings.
         return mapToBookingResponse(booking);
@@ -422,6 +456,7 @@ public class BookingService {
             BookingResponse response = new BookingResponse();
             response.setId(booking.getId());
             response.setRoomId(booking.getRoom() != null ? booking.getRoom().getId() : null);
+            response.setRoomPublicId(booking.getRoom() != null ? booking.getRoom().getRoomId() : null);
             response.setUserId(booking.getUser() != null ? booking.getUser().getId() : null);
             response.setCheckIn(booking.getCheckIn());
             response.setCheckOut(booking.getCheckOut());
@@ -472,6 +507,7 @@ public class BookingService {
         return ResponseEntity.ok(BookingDetailResponse.builder()
                 .id(booking.getId())
                 .roomId(booking.getRoom().getId())
+                .roomPublicId(booking.getRoom().getRoomId())
                 .roomNumber(booking.getRoom().getId().toString())
                 .userId(booking.getUser().getId())
                 .checkIn(booking.getCheckIn())
@@ -499,6 +535,7 @@ public class BookingService {
         return BookingResponse.builder()
                 .id(booking.getId())
                 .roomId(booking.getRoom().getId())
+                .roomPublicId(booking.getRoom().getRoomId())
                 .userId(booking.getUser().getId())
                 .checkIn(booking.getCheckIn())
                 .checkOut(booking.getCheckOut())
@@ -550,6 +587,7 @@ public class BookingService {
         return BookingResponse.builder()
                 .id(booking.getId())
                 .roomId(booking.getRoom().getId())
+                .roomPublicId(booking.getRoom().getRoomId())
                 .userId(booking.getUser().getId())
                 .reference(booking.getReference())
                 .checkIn(booking.getCheckIn())

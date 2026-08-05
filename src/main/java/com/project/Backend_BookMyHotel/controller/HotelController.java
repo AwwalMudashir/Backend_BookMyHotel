@@ -30,7 +30,7 @@ public class HotelController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> getHotelById(@RequestParam Long id) {
+    public ResponseEntity<?> getHotelById(@PathVariable Long id) {
         return hotelService.getHotelById(id);
     }
 
@@ -43,19 +43,19 @@ public class HotelController {
 
     @PostMapping("/create")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<?> createHotel(HotelRequestDto request){
+    public ResponseEntity<?> createHotel(@RequestBody HotelRequestDto request){
         return hotelService.createHotel(request);
     }
 
     @PutMapping("/update/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<?> updateHotel(Long id,HotelRequestDto request){
+    public ResponseEntity<?> updateHotel(@PathVariable Long id, @RequestBody HotelRequestDto request){
         return hotelService.updateHotel(id, request);
     }
 
     @DeleteMapping("/delete/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<?> deleteHotel(@RequestParam Long id){
+    public ResponseEntity<?> deleteHotel(@PathVariable Long id){
         return hotelService.deleteHotel(id);
     }
 }

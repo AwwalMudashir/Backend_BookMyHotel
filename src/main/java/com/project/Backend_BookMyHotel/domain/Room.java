@@ -1,6 +1,7 @@
 package com.project.Backend_BookMyHotel.domain;
 
 import com.project.Backend_BookMyHotel.dto.RoomTag;
+import com.project.Backend_BookMyHotel.util.PublicIdGenerator;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -24,6 +25,15 @@ public class Room {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // Cloudinary image public IDs — stored as JSONB so we can delete/rotate images later.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "public_ids", columnDefinition = "jsonb")
+    private List<String> publicIds = new ArrayList<>();
+
+    // New: public-facing random identifier for the room entity (used in frontend URLs).
+    @Column(name = "room_id", unique = true, nullable = false)
+    private String roomId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "branch_id", nullable = false)
@@ -52,10 +62,6 @@ public class Room {
     @Column(name = "images", columnDefinition = "jsonb")
     private List<String> images = new ArrayList<>();
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "public_ids", columnDefinition = "jsonb")
-    private List<String> publicIds = new ArrayList<>();
-
     // A proper, filterable classification set (eco-friendly, work-friendly, ...) — kept separate
     // from `amenities` above since these are curated category badges the search/UI need to query
     // directly, not arbitrary feature flags. Backed by its own join table (room_tags) rather than
@@ -65,4 +71,15 @@ public class Room {
     @Column(name = "tag")
     @Enumerated(EnumType.STRING)
     private Set<RoomTag> tags = new HashSet<>();
+
+    @PrePersist
+    protected void generatePublicId() {
+        if (this.roomId == null) {
+            // roomId is a short public identifier used for URL-safe room references
+            this.roomId = PublicIdGenerator.generate();
+        }
+        if (this.publicIds == null) {
+            this.publicIds = new ArrayList<>();
+        }
+    }
 }

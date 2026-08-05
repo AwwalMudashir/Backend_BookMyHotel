@@ -1,5 +1,6 @@
 package com.project.Backend_BookMyHotel.domain;
 
+import com.project.Backend_BookMyHotel.util.PublicIdGenerator;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -17,6 +18,9 @@ public class Hotel {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "public_id", unique = true, nullable = false)
+    private String publicId;
+
     @Column(nullable = false)
     private String name;
 
@@ -33,4 +37,11 @@ public class Hotel {
 
     @OneToMany(mappedBy = "hotel", cascade = CascadeType.ALL)
     private List<Promotion> promotions;
+
+    @PrePersist
+    protected void generatePublicId() {
+        if (this.publicId == null) {
+            this.publicId = PublicIdGenerator.generate();
+        }
+    }
 }

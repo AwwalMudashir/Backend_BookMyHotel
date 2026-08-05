@@ -36,7 +36,7 @@ public class RoomController {
     }
 
     @GetMapping("/{roomId}")
-    public ResponseEntity<?> getRoomById(@PathVariable Long roomId) {
+    public ResponseEntity<?> getRoomById(@PathVariable String roomId) {
         return roomService.getRoomById(roomId);
     }
 
@@ -53,7 +53,7 @@ public class RoomController {
     @PutMapping("/branches/{branchId}/{roomId}")
     public ResponseEntity<?> updateRoom(
             @PathVariable Long branchId,
-            @PathVariable Long roomId,
+            @PathVariable String roomId,
             @RequestPart("room") RoomRequestDto request,
             @RequestPart(value = "images", required = false) List<MultipartFile> images) {
         return roomService.updateRoom(branchId, roomId, request, images);
@@ -61,7 +61,7 @@ public class RoomController {
 
     @PreAuthorize("hasAuthority('ADMIN')")
     @DeleteMapping("/branches/{branchId}/{roomId}")
-    public ResponseEntity<?> deleteRoom(@PathVariable Long branchId, @PathVariable Long roomId) {
+    public ResponseEntity<?> deleteRoom(@PathVariable Long branchId, @PathVariable String roomId) {
         return roomService.deleteRoom(branchId, roomId);
     }
 

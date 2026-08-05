@@ -1,6 +1,7 @@
 package com.project.Backend_BookMyHotel.domain;
 
 import com.project.Backend_BookMyHotel.dto.PaymentStatus;
+import com.project.Backend_BookMyHotel.util.PublicIdGenerator;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -18,6 +19,9 @@ public class Payment {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "payment_id", unique = true, nullable = false)
+    private String paymentId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "booking_id", nullable = false)
@@ -37,4 +41,11 @@ public class Payment {
 
     @Column(name = "paid_at")
     private LocalDateTime paidAt;
+
+    @PrePersist
+    protected void generatePaymentId() {
+        if (this.paymentId == null) {
+            this.paymentId = PublicIdGenerator.generate();
+        }
+    }
 }

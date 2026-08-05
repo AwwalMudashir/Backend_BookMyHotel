@@ -161,7 +161,7 @@ public class RoomSearchCacheService {
                 : Sort.Direction.ASC;
 
         if ("rating".equalsIgnoreCase(property)) {
-            property = "branch.hotel.rating";
+            property = "branch.hotel.starRating";
         } else {
             property = "pricePerNight";
         }
@@ -180,8 +180,11 @@ public class RoomSearchCacheService {
 
         BigDecimal totalPrice = pricePerNight.multiply(BigDecimal.valueOf(nights));
         Map<String, Object> amenities = room != null && room.getAmenities() != null
-                ? room.getAmenities()
+                ? Map.copyOf(room.getAmenities())
                 : Collections.emptyMap();
+        Set<RoomTag> tags = room != null && room.getTags() != null
+                ? Set.copyOf(room.getTags())
+                : Collections.emptySet();
 
         return RoomSearchResult.builder()
                 .roomId(room != null ? room.getId() : null)
@@ -192,7 +195,7 @@ public class RoomSearchCacheService {
                 .totalPrice(totalPrice)
                 .currency(branch != null ? branch.getCurrency() : "USD")
                 .amenities(amenities)
-                .tags(room != null ? room.getTags() : Collections.emptySet())
+                .tags(tags)
                 .available(true)
                 .build();
     }

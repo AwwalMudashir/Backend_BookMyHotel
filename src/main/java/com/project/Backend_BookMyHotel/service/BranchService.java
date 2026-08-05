@@ -121,12 +121,6 @@ public class BranchService {
 
     @Transactional
     public ResponseEntity<?> updateBranch(Long hotelId, Long branchId, BranchRequestDto request) {
-        // Step A: Does the parent hotel brand exist?
-        if (!hotelRepo.existsById(hotelId)) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body("Error: Hotel brand with ID " + hotelId + " does not exist.");
-        }
-
         // Step B: Does the target branch location exist?
         Optional<Branch> branchOpt = branchRepo.findById(branchId);
         if (branchOpt.isEmpty()) {
@@ -136,8 +130,8 @@ public class BranchService {
 
         Branch branch = branchOpt.get();
 
-        // Verify that this branch actually belongs to the hotel passed in the request
-        if (!branch.getHotel().getId().equals(hotelId)) {
+        // Verify that this branch actually belongs to the hotel passed in the request (if provided)
+        if (hotelId != null && !branch.getHotel().getId().equals(hotelId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body("Error: Security restriction. Branch ID " + branchId + " does not belong to Hotel ID " + hotelId + ".");
         }
@@ -182,7 +176,7 @@ public class BranchService {
 
         Branch branch = branchOpt.get();
 
-        if (!branch.getHotel().getId().equals(hotelId)) {
+        if (hotelId != null && !branch.getHotel().getId().equals(hotelId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body("Error: Security restriction. Cannot delete. Branch ID " + branchId + " does not belong to Hotel ID " + hotelId + ".");
         }
@@ -233,7 +227,6 @@ public class BranchService {
                 .currency(room.getBranch().getCurrency())
                 .amenities(room.getAmenities())
                 .images(room.getImages())
-                .publicIds(room.getPublicIds())
                 .tags(room.getTags())
                 .build();
     }

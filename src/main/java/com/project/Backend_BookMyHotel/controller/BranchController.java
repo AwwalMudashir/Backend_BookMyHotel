@@ -32,13 +32,13 @@ public class BranchController {
 
     @PostMapping("/byHotel/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> getBranchesByHotel(Long id){
+    private ResponseEntity<?> getBranchesByHotel(@PathVariable Long id){
         return branchService.getBranchesByHotel(id);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> getBranchById(Long id){
+    private ResponseEntity<?> getBranchById(@PathVariable Long id){
         return branchService.getBranchById(id);
     }
 
@@ -67,20 +67,20 @@ public class BranchController {
 
     @PostMapping("/create")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> createBranch(Long hotelId, BranchRequestDto request){
-        return branchService.createBranch(hotelId, request);
+    private ResponseEntity<?> createBranch(@RequestBody BranchRequestDto request){
+        return branchService.createBranch(request.getHotelId(), request);
     }
 
-    @PutMapping("/update")
+    @PutMapping("/update/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> updateBranch(Long hotelId, Long branchId, BranchRequestDto request){
-        return branchService.updateBranch(hotelId, branchId, request);
+    private ResponseEntity<?> updateBranch(@PathVariable Long id, @RequestBody BranchRequestDto request){
+        return branchService.updateBranch(null, id, request);
     }
 
-    @DeleteMapping("/delete")
+    @DeleteMapping("/delete/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> deleteBranch(Long hotelId, Long branchId){
-        return branchService.deleteBranch(hotelId, branchId);
+    private ResponseEntity<?> deleteBranch(@PathVariable Long id){
+        return branchService.deleteBranch(null, id);
     }
 
 

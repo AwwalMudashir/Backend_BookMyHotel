@@ -102,6 +102,7 @@ public class PaymentService {
                     log.info("Reusing existing Stripe PaymentIntent {} with status {} for booking {}.", existingIntent.getId(), existingIntent.getStatus(), bookingId);
                     return ResponseEntity.ok(PaymentIntentResponse.builder()
                             .bookingId(bookingId)
+                            .paymentId(pending.getPaymentId())
                             .paymentIntentId(existingIntent.getId())
                             .clientSecret(existingIntent.getClientSecret())
                             .amount(amount)
@@ -124,6 +125,7 @@ public class PaymentService {
 
                 return ResponseEntity.ok(PaymentIntentResponse.builder()
                         .bookingId(bookingId)
+                        .paymentId(pending.getPaymentId())
                         .paymentIntentId(intent.getId())
                         .clientSecret(intent.getClientSecret())
                         .amount(amount)
@@ -148,6 +150,7 @@ public class PaymentService {
 
             return ResponseEntity.status(HttpStatus.CREATED).body(PaymentIntentResponse.builder()
                     .bookingId(bookingId)
+                    .paymentId(payment.getPaymentId())
                     .paymentIntentId(intent.getId())
                     .clientSecret(intent.getClientSecret())
                     .amount(amount)
@@ -481,14 +484,21 @@ public class PaymentService {
     // Called from BookingService.cancelBooking(). Deliberately a no-op (not an error) when the
     // booking was never actually paid for — most cancellations are of PENDING bookings that
     // never got past checkout.
+    public static record RefundResult(BigDecimal amount, String currency, String refundId) {
+    }
+
     @Transactional
-    public void initiateRefund(Long bookingId) {
+    public Optional<RefundResult> initiateRefund(Long bookingId) {
         Optional<Payment> paymentOpt = paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(bookingId, PaymentStatus.SUCCEEDED);
         if (paymentOpt.isEmpty()) {
-            return;
+            return Optional.empty();
         }
 
         Payment payment = paymentOpt.get();
+        if (payment.getStatus() == PaymentStatus.REFUNDED) {
+            return Optional.of(new RefundResult(payment.getAmount(), payment.getCurrency(), payment.getRefundId()));
+        }
+
         try {
             RefundCreateParams params = RefundCreateParams.builder()
                     .setPaymentIntent(payment.getStripePaymentId())
@@ -498,6 +508,7 @@ public class PaymentService {
             payment.setStatus(PaymentStatus.REFUNDED);
             payment.setRefundId(refund.getId());
             paymentRepository.save(payment);
+            return Optional.of(new RefundResult(payment.getAmount(), payment.getCurrency(), refund.getId()));
         } catch (StripeException e) {
             // Deliberately swallowed rather than rethrown: cancelBooking() has already persisted
             // the CANCELLED status by the time this runs, and a flaky Stripe call shouldn't roll
@@ -505,6 +516,7 @@ public class PaymentService {
             // for manual follow-up.
             log.error("Stripe refund failed for booking {} (PaymentIntent {}): {}",
                     bookingId, payment.getStripePaymentId(), e.getMessage(), e);
+            return Optional.empty();
         }
     }
 
@@ -530,6 +542,33 @@ public class PaymentService {
 
         return ResponseEntity.ok(PaymentStatusResponse.builder()
                 .bookingId(bookingId)
+                .paymentId(payment.getPaymentId())
+                .stripePaymentId(payment.getStripePaymentId())
+                .status(payment.getStatus())
+                .amount(payment.getAmount())
+                .currency(payment.getCurrency())
+                .paidAt(payment.getPaidAt())
+                .refundId(payment.getRefundId())
+                .build());
+    }
+
+    // Secure endpoint that uses paymentId instead of database IDs
+    public ResponseEntity<?> getPaymentStatusByPaymentId(String paymentId, Long userId, Role userRole) {
+        Optional<Payment> paymentOpt = paymentRepository.findByPaymentId(paymentId);
+        if (paymentOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No payment found with ID: " + paymentId);
+        }
+
+        Payment payment = paymentOpt.get();
+        Booking booking = payment.getBooking();
+
+        if ("CUSTOMER".equalsIgnoreCase(userRole.toString()) && !booking.getUser().getId().equals(userId)) {
+            return ResponseEntity.badRequest().body("You are not authorized to view this payment.");
+        }
+
+        return ResponseEntity.ok(PaymentStatusResponse.builder()
+                .bookingId(booking.getId())
+                .paymentId(payment.getPaymentId())
                 .stripePaymentId(payment.getStripePaymentId())
                 .status(payment.getStatus())
                 .amount(payment.getAmount())

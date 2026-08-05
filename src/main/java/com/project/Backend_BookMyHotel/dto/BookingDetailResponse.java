@@ -13,6 +13,8 @@ import java.util.List;
 public class BookingDetailResponse {
     private Long id;
     private Long roomId;
+    // Public-facing random identifier for a room (room.roomId). Included for frontend convenience.
+    private String roomPublicId;
     private String roomNumber;
     private String hotelName;
     private Long userId;

@@ -242,6 +242,104 @@ public class EmailTemplateService {
         );
     }
 
+    public String bookingCancellationTemplate(
+            String guestName,
+            String bookingRef,
+            String hotelName,
+            String branchLocation,
+            String roomType,
+            LocalDate checkInDate,
+            LocalDate cancellationDate,
+            String refundAmount,
+            boolean refundProcessed,
+            boolean isEarlyCheckout
+    ) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy");
+        String formattedCheckIn = checkInDate.format(formatter);
+        String formattedCancellation = cancellationDate.format(formatter);
+        String formattedRefundAmount = refundAmount != null ? refundAmount : "Pending review";
+        String refundHeadline = refundProcessed ? "Refund Processed" : "Cancellation Confirmed";
+        String refundMessage = refundProcessed
+                ? "We have processed your refund for <strong>" + escapeHtml(formattedRefundAmount) + "</strong>. The refunded amount should appear in your original payment method within 5-7 business days."
+                : "Your booking has been cancelled successfully. If a payment was captured, your refund will be processed and should appear in your account within 5-7 business days. If you have any questions, please contact support.";
+        String cancellationIntro = isEarlyCheckout
+                ? "We’re sorry to see you check out early. Your reservation has been ended early and your room is now available for other guests."
+                : "We’re sorry to see you cancel, but your reservation has been successfully cancelled before the check-in date.";
+
+        return """
+<div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#f4f6f8; color:#111827;">
+    <div style="max-width:600px; margin:auto; background:#ffffff; padding:32px; border-radius:12px; box-shadow:0 4px 25px rgba(17, 24, 39, 0.05); border-top: 8px solid #ef4444;">
+
+        <!-- Header -->
+        <div style="margin-bottom:28px;">
+            <span style="color:#ef4444; font-size:12px; letter-spacing:0.05em; text-transform:uppercase; font-weight:700;">Booking Cancelled</span>
+            <h1 style="margin:4px 0 0; font-size:26px; color:#111827; font-weight:800;">Your reservation has been cancelled</h1>
+        </div>
+
+        <p style="font-size:15px; color:#374151;">Hello %s,</p>
+        <p style="font-size:14px; color:#4b5563; line-height:1.5; margin-bottom:24px;">
+            %s
+        </p>
+
+        <div style="background:#fef2f2; border:1px solid #fee2e2; border-radius:8px; padding:18px 20px; margin-bottom:24px;">
+            <p style="margin:0 0 10px; font-size:13px; color:#b91c1c; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">%s</p>
+            <p style="margin:0; font-size:15px; color:#111827; line-height:1.7;">%s</p>
+        </div>
+
+        <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:24px; font-size:14px; line-height:1.9;">
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;" width="38%%">Booking Reference</td>
+                <td style="padding:4px 0; color:#111827; font-weight:600;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Hotel</td>
+                <td style="padding:4px 0; color:#111827;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Branch</td>
+                <td style="padding:4px 0; color:#111827;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Room Type</td>
+                <td style="padding:4px 0; color:#329775; font-weight:600; text-transform:capitalize;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Original Check-in</td>
+                <td style="padding:4px 0; color:#111827;">%s</td>
+            </tr>
+            <tr>
+                <td style="padding:4px 0; color:#6b7280;">Cancellation Date</td>
+                <td style="padding:4px 0; color:#111827;">%s</td>
+            </tr>
+        </table>
+
+        <div style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:18px 20px; margin-bottom:28px;">
+            <p style="margin:0; font-size:13px; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em;">Refund Summary</p>
+            <p style="margin:10px 0 0; font-size:15px; color:#111827; line-height:1.7;"><strong>%s</strong></p>
+        </div>
+
+        <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; text-align:center;">
+            <p style="margin:0; font-size:14px; color:#166534; line-height:1.6;">If you have any questions about your cancellation or refund, please contact our support team.</p>
+            <a href="/support" style="display:inline-block; margin-top:14px; background:#22c55e; color:#ffffff; padding:12px 28px; border-radius:6px; font-size:14px; font-weight:700; text-decoration:none;">Contact Support</a>
+        </div>
+
+    </div>
+</div>
+""".formatted(
+                escapeHtml(guestName),
+                escapeHtml(cancellationIntro),
+                escapeHtml(refundHeadline),
+                refundMessage,
+                escapeHtml(bookingRef),
+                escapeHtml(hotelName),
+                escapeHtml(branchLocation),
+                escapeHtml(roomType),
+                formattedCheckIn,
+                formattedCancellation,
+                escapeHtml(formattedRefundAmount)
+        );
+    }
+
     public String contactTemplate(String name, String email, String message) {
         String escName = escapeHtml(name);
         String escEmail = escapeHtml(email);

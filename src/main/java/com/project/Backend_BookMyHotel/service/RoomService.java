@@ -76,11 +76,11 @@ public class RoomService {
         return ResponseEntity.ok(dtoList);
     }
 
-    public ResponseEntity<?> getRoomById(Long roomId) {
-        Optional<Room> roomOpt = roomRepo.findById(roomId);
+    public ResponseEntity<?> getRoomById(String roomIdOrPublic) {
+        Optional<Room> roomOpt = findRoomByIdentifier(roomIdOrPublic);
         if (roomOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body("Error: Room with ID " + roomId + " not found.");
+                    .body("Error: Room with identifier " + roomIdOrPublic + " not found.");
         }
         return ResponseEntity.ok(mapToRoomResponseDto(roomOpt.get()));
     }
@@ -134,14 +134,14 @@ public class RoomService {
     }
 
     @Transactional
-    public ResponseEntity<?> updateRoom(Long branchId, Long roomId, RoomRequestDto request, List<MultipartFile> imageFiles) {
+    public ResponseEntity<?> updateRoom(Long branchId, String roomIdOrPublic, RoomRequestDto request, List<MultipartFile> imageFiles) {
         if (!branchRepo.existsById(branchId)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Target Branch not found.");
         }
 
-        Optional<Room> roomOpt = roomRepo.findById(roomId);
+        Optional<Room> roomOpt = findRoomByIdentifier(roomIdOrPublic);
         if (roomOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Room not found.");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Room not found for identifier: " + roomIdOrPublic);
         }
 
         Room room = roomOpt.get();
@@ -149,7 +149,7 @@ public class RoomService {
         // Security Check: Enforce branch ownership integrity
         if (!room.getBranch().getId().equals(branchId)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Error: Security Violation. Room ID " + roomId + " does not belong to Branch ID " + branchId + ".");
+                    .body("Error: Security Violation. Room identifier " + roomIdOrPublic + " does not belong to Branch ID " + branchId + ".");
         }
 
         if (request.getRoomTypeId() != null) {
@@ -197,11 +197,11 @@ public class RoomService {
 
 
     @Transactional
-    public ResponseEntity<?> deleteRoom(Long branchId, Long roomId) {
-        Optional<Room> roomOpt = roomRepo.findById(roomId);
+    public ResponseEntity<?> deleteRoom(Long branchId, String roomIdOrPublic) {
+        Optional<Room> roomOpt = findRoomByIdentifier(roomIdOrPublic);
 
         if (roomOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Room not found.");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Room not found for identifier: " + roomIdOrPublic);
         }
 
         Room room = roomOpt.get();
@@ -222,7 +222,7 @@ public class RoomService {
         }
 
         roomRepo.delete(room);
-        return ResponseEntity.ok("Success: Room ID " + roomId + " has been completely deleted.");
+        return ResponseEntity.ok("Success: Room with identifier " + roomIdOrPublic + " has been completely deleted.");
     }
 
     private RoomResponseDto mapToRoomResponseDto(Room room) {
@@ -240,9 +240,31 @@ public class RoomService {
             dto.setBranchName(room.getBranch().getCity() + " Branch");
         }
 
+        dto.setImages(room.getImages());
+        dto.setPublicIds(room.getPublicIds());
+        dto.setRoomId(room.getRoomId());
+
         if (room.getRoomType() != null) {
             dto.setRoomTypeName(room.getRoomType());
         }
         return dto;
+    }
+
+    /**
+     * Resolve a room by either numeric DB id or the new public-facing roomId string.
+     * If the identifier parses to a Long, attempt findById first, otherwise try findByRoomId.
+     */
+    private Optional<Room> findRoomByIdentifier(String id) {
+        if (id == null) return Optional.empty();
+        // Try numeric id lookup first
+        try {
+            Long numeric = Long.parseLong(id);
+            Optional<Room> byId = roomRepo.findById(numeric);
+            if (byId.isPresent()) return byId;
+        } catch (NumberFormatException ignored) {
+            // not numeric
+        }
+        // Fallback to roomId lookup
+        return roomRepo.findByRoomId(id);
     }
 }

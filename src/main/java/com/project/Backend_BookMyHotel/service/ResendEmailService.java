@@ -22,30 +22,37 @@ public class ResendEmailService {
     @Value("${resend.email.from}")
     private String fromEmail;
 
+    // Frontend base URL for link redirects inside email templates
+    @Value("${frontend.base.url:http://localhost:5173}")
+    private String frontendBaseUrl;
+
     private static final Logger logger = LoggerFactory.getLogger(ResendEmailService.class);
 
-    public void sendEmail(String to, String subject, String html) {
-        sendEmail(to, subject, html, null);
+    public boolean sendEmail(String to, String subject, String html) {
+        return sendEmail(to, subject, html, null);
     }
 
-    public void sendContactEmail(String to, String replyTo, String subject, String html) {
-        sendEmail(to, subject, html, replyTo);
+    public boolean sendContactEmail(String to, String replyTo, String subject, String html) {
+        return sendEmail(to, subject, html, replyTo);
     }
 
-    public void sendEmail(String to, String subject, String html, String replyTo) {
+    public boolean sendEmail(String to, String subject, String html, String replyTo) {
         logger.info("[Email] ResendEmailService start: to={} from={} replyTo={} subject={}", to, fromEmail, replyTo, subject);
 
         if (apiKey == null || apiKey.isBlank()) {
             logger.error("[Email] Resend API key is missing. Set RESEND_API_KEY in the environment.");
-            throw new IllegalStateException("Resend API key is not configured. Set RESEND_API_KEY.");
+            return false;
         }
 
         if (fromEmail == null || fromEmail.isBlank()) {
             logger.error("[Email] Resend from email is missing. Set RESEND_EMAIL_FROM in the environment.");
-            throw new IllegalStateException("Resend from email is not configured. Set RESEND_EMAIL_FROM.");
+            return false;
         }
 
         try {
+            // Rewrite relative frontend links in the template to point at the configured frontend base URL
+            String processedHtml = rewriteFrontendLinks(html);
+
             URL url = new URL("https://api.resend.com/emails");
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
 
@@ -55,7 +62,7 @@ public class ResendEmailService {
             conn.setDoOutput(true);
 
             String escapedSubject = escapeJson(subject);
-            String escapedHtml = escapeJson(html);
+            String escapedHtml = escapeJson(processedHtml);
             String escapedReplyTo = replyTo != null ? escapeJson(replyTo) : null;
 
             String replyField = escapedReplyTo != null && !escapedReplyTo.isBlank()
@@ -91,16 +98,40 @@ public class ResendEmailService {
             if (responseCode >= 400) {
                 String errorBody = readStream(conn.getErrorStream());
                 logger.error("[Email] Resend failed code={} body={}", responseCode, errorBody);
-                throw new RuntimeException("Resend failed with code: " + responseCode + " response: " + errorBody);
+                return false;
             }
 
             String successBody = readStream(conn.getInputStream());
             logger.info("[Email] Resend success response body={}", successBody);
+            return true;
 
         } catch (Exception e) {
             logger.error("[Email] ResendEmailService exception while sending email", e);
-            throw new RuntimeException("Email sending failed", e);
+            return false;
         }
+    }
+
+    private String rewriteFrontendLinks(String html) {
+        if (html == null) return null;
+        String base = frontendBaseUrl != null ? frontendBaseUrl.replaceAll("/$", "") : "http://localhost:5173";
+
+        // Specific mappings
+        html = html.replace("href=\"/explore\"", "href=\"" + base + "/search\"");
+        html = html.replace("href=\"/recovery\"", "href=\"" + base + "/profile\"");
+        html = html.replace("href=\"/my-bookings\"", "href=\"" + base + "/my-bookings\"");
+        html = html.replace("href=\"/support\"", "href=\"" + base + "/contact\"");
+        html = html.replace("href=\"/admin/dashboard\"", "href=\"" + base + "/admin/dashboard\"");
+        html = html.replace("href=\"/manager/dashboard\"", "href=\"" + base + "/manager/dashboard\"");
+
+        // Generic mapping for remaining absolute-path hrefs (avoid mailto: and protocol-based links)
+        try {
+            html = html.replaceAll("href=\\\"/(?!/)([a-zA-Z0-9_\\-/:]+)\\\"",
+                    "href=\"" + base + "/$1\"");
+        } catch (Exception ignored) {
+            // If regex fails for any reason, fall back to what we have
+        }
+
+        return html;
     }
 
     private static String escapeJson(String value) {

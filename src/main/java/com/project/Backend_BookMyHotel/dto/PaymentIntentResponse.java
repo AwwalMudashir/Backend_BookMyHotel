@@ -13,6 +13,7 @@ import java.math.BigDecimal;
 @Builder
 public class PaymentIntentResponse {
     private Long bookingId;
+    private String paymentId;
     private String paymentIntentId;
     // The only piece of this the frontend actually needs: hand it to Stripe.js
     // (stripe.confirmPayment / Payment Element) to complete the charge client-side.

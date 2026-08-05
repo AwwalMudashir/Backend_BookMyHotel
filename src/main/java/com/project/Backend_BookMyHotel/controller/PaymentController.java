@@ -80,6 +80,7 @@ public class PaymentController {
         return ResponseEntity.ok("");
     }
 
+    // Legacy endpoint for backward compatibility — uses bookingId
     @GetMapping("/{bookingId}")
     @PreAuthorize("hasAuthority('CUSTOMER')")
     public ResponseEntity<?> getPaymentStatus(
@@ -88,5 +89,16 @@ public class PaymentController {
     ) {
         User user = userRepo.findByEmail(authentication.getName());
         return paymentService.getPaymentStatus(bookingId, user.getId(), user.getRole());
+    }
+
+    // New secure endpoint — uses paymentId instead of exposing database IDs in URLs
+    @GetMapping("/by-id/{paymentId}")
+    @PreAuthorize("hasAuthority('CUSTOMER')")
+    public ResponseEntity<?> getPaymentStatusByPaymentId(
+            @PathVariable String paymentId,
+            Authentication authentication
+    ) {
+        User user = userRepo.findByEmail(authentication.getName());
+        return paymentService.getPaymentStatusByPaymentId(paymentId, user.getId(), user.getRole());
     }
 }

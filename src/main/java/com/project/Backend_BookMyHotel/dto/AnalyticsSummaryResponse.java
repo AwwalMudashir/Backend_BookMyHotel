@@ -14,4 +14,5 @@ public class AnalyticsSummaryResponse {
     private long roomNightsBooked;
     private BigDecimal revenue;
     private BigDecimal averageDailyRate;
+    private String currency;
 }
