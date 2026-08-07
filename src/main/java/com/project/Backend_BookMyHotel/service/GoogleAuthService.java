@@ -95,12 +95,22 @@ public class GoogleAuthService {
         try {
             GoogleIdToken idToken = googleIdTokenVerifier.verify(idTokenString);
             if (idToken == null) {
+                log.warn("Google ID token verification returned null for token starting {}", previewToken(idTokenString));
                 throw new InvalidGoogleTokenException("Invalid or expired Google ID token.");
             }
             return idToken.getPayload();
         } catch (GeneralSecurityException | IOException | IllegalArgumentException e) {
+            log.warn("Google ID token verification failed for token starting {}: {}", previewToken(idTokenString), e.getMessage());
             throw new InvalidGoogleTokenException("Could not verify Google ID token.");
         }
+    }
+
+    private String previewToken(String idTokenString) {
+        if (idTokenString == null) {
+            return "<null>";
+        }
+        int previewLength = Math.min(8, idTokenString.length());
+        return idTokenString.substring(0, previewLength) + "...";
     }
 
     private User createUserFromGoogle(GoogleIdToken.Payload payload, String googleId) {
