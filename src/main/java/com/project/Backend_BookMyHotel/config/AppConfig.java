@@ -59,10 +59,9 @@ public class AppConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(custom -> custom.disable())
                 .authorizeHttpRequests(registry -> registry
-                        .requestMatchers("/auth/register", "/auth/login","/auth/google","/auth/refresh","/auth/forgot-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/hotel/all","/hotel","/hotel/{id}","/hotel/{id}/branches","/auth/logout","/search/rooms","/room/{roomId}","/payments/webhook","/contact","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // Browsing active promotions is public (e.g. shown on a hotel page); create/
-                        // update/deactivate stay behind the @PreAuthorize checks on those endpoints.
-                        .requestMatchers(HttpMethod.GET, "/promotions", "/promotion").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login","/auth/google","/auth/refresh","/auth/forgot-password","/auth/reset-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/auth/logout","/search/rooms","/payments/webhook","/contact","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // Public hotel browsing, public room lookups, and active promo listings.
+                        .requestMatchers(HttpMethod.GET, "/hotel/**", "/room/**", "/branch/**", "/branches/**", "/services/branch/**", "/promotions", "/promotions/**", "/promotion", "/promotion/**").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(httpBasic -> {})

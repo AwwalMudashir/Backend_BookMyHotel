@@ -31,6 +31,8 @@ public class BookingResponse {
     // Only non-zero once the booking has been confirmed for an eco-friendly-tagged room — see
     // BookingService.confirmBooking. Always 0 on the create response itself.
     private Integer ecoPointsEarned;
+    private Integer ecoPointsRedeemed;
+    private BigDecimal ecoPointsDiscount;
     private PriceBreakdown priceBreakdown;
     private List<AddonServiceResponse> services;
     private LocalDateTime createdAt;
@@ -40,6 +42,9 @@ public class BookingResponse {
     public static class PriceBreakdown {
         private BigDecimal basePrice;
         private BigDecimal discountAmount;
+        private BigDecimal servicesTotal;
+        private BigDecimal ecoPointsDiscount;
+        private Integer ecoPointsRedeemed;
         private BigDecimal finalPrice;
         private String appliedPromoCode;
     }
@@ -48,7 +53,9 @@ public class BookingResponse {
     @Builder
     public static class AddonServiceResponse {
         private Long id;
+        private Long serviceId;
         private String serviceName;
+        private BigDecimal unitPrice;
         private Integer quantity;
         private BigDecimal subtotal;
     }

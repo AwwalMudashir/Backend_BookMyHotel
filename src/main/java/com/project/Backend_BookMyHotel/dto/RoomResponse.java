@@ -16,7 +16,6 @@ import java.util.Set;
 @Builder
 public class RoomResponse {
     private Long id;
-    // New: public-facing random identifier for the room (room.roomId)
     private String roomId;
     private Long branchId;
     private String roomType;

@@ -55,9 +55,18 @@ public class RoomAvailabilityService {
         Map<LocalDate, RoomAvailability> overrideMap = overrides.stream()
                 .collect(Collectors.toMap(RoomAvailability::getDate, Function.identity(), (a, b) -> a));
 
-        // 2. Fetch active, confirmed bookings for this date window
+        // 2. Fetch active bookings for this date window. Include both CONFIRMED and PENDING
+        // so the calendar immediately reflects bookings that have been created but not yet
+        // confirmed/paid, preventing a user from seeing a date as selectable while it is
+        // reserved by someone else.
         List<Booking> confirmedBookings = bookingRepository
                 .findOverlappingBookings(roomId, BookingStatus.CONFIRMED, startDate, endDate);
+        List<Booking> pendingBookings = bookingRepository
+                .findOverlappingBookings(roomId, BookingStatus.PENDING, startDate, endDate);
+        // Combine into a single list used for availability checks
+        List<Booking> overlappingBookings = new ArrayList<>();
+        overlappingBookings.addAll(confirmedBookings);
+        overlappingBookings.addAll(pendingBookings);
 
         List<AvailabilityCalendar.DailyAvailability> availabilityDays = new ArrayList<>();
 
@@ -66,8 +75,8 @@ public class RoomAvailabilityService {
         while (!current.isAfter(endDate)) {
             final LocalDate date = current;
 
-            // Check if date falls inside any active booking
-            boolean isBooked = confirmedBookings.stream().anyMatch(b ->
+            // Check if date falls inside any active booking (confirmed or pending)
+            boolean isBooked = overlappingBookings.stream().anyMatch(b ->
                     !date.isBefore(b.getCheckIn()) && date.isBefore(b.getCheckOut()));
 
             boolean isAvailable = !isBooked;
@@ -195,9 +204,16 @@ public class RoomAvailabilityService {
         Map<LocalDate, RoomAvailability> overrideMap = overrides.stream()
                 .collect(Collectors.toMap(RoomAvailability::getDate, Function.identity(), (a, b) -> a));
 
-        // 3. Load active bookings to check if any night in this range is already booked
+        // 3. Load active bookings to check if any night in this range is already booked.
+        // Include both CONFIRMED and PENDING so pricing will reflect nights that are already
+        // reserved by someone else even if payment is still pending.
         List<Booking> confirmedBookings = bookingRepository
                 .findOverlappingBookings(roomId, BookingStatus.CONFIRMED, checkIn, checkOut);
+        List<Booking> pendingBookings = bookingRepository
+                .findOverlappingBookings(roomId, BookingStatus.PENDING, checkIn, checkOut);
+        List<Booking> overlappingBookings = new ArrayList<>();
+        overlappingBookings.addAll(confirmedBookings);
+        overlappingBookings.addAll(pendingBookings);
 
         BigDecimal totalPrice = BigDecimal.ZERO;
         boolean entireStayAvailable = true;
@@ -208,8 +224,8 @@ public class RoomAvailabilityService {
         while (current.isBefore(checkOut)) {
             final LocalDate date = current;
 
-            // Check if this night overlaps with a confirmed booking
-            boolean isBooked = confirmedBookings.stream().anyMatch(b ->
+            // Check if this night overlaps with a confirmed or pending booking
+            boolean isBooked = overlappingBookings.stream().anyMatch(b ->
                     !date.isBefore(b.getCheckIn()) && date.isBefore(b.getCheckOut()));
 
             boolean dayAvailable = !isBooked;

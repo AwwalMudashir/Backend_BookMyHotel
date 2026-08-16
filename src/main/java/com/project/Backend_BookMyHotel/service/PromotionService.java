@@ -33,6 +33,9 @@ public class PromotionService {
     @Autowired
     private HotelRepository hotelRepository;
 
+    @Autowired
+    private PromotionNotificationService promotionNotificationService;
+
     // Validates a promo code and calculates the discount breakdown.
     @Transactional(readOnly = true)
     public PromotionBreakdownResponse applyPromotion(String code, BigDecimal totalPrice, Long hotelId) {
@@ -182,6 +185,15 @@ public class PromotionService {
                 .build();
 
         Promotion saved = promotionRepository.save(promo);
+
+        // Enqueue promotional notifications for users who opted in. Processed by a background queue.
+        try {
+            promotionNotificationService.enqueuePromotionNotifications(saved);
+        } catch (Exception ignored) {
+            // If queueing fails, do not fail the promotion creation — log and continue
+            System.err.println("Failed to queue promotion notifications: " + ignored.getMessage());
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED).body(toPromotionResponse(saved));
     }
 
@@ -251,6 +263,20 @@ public class PromotionService {
         return ResponseEntity.ok(promotions);
     }
 
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> listGlobalActivePromotions() {
+        List<PromotionResponse> promotions = promotionRepository.findByActiveTrue().stream()
+                .filter(p -> {
+                    java.time.LocalDate today = java.time.LocalDate.now();
+                    return (p.getValidFrom() == null || !today.isBefore(p.getValidFrom()))
+                            && (p.getValidTo() == null || !today.isAfter(p.getValidTo()));
+                })
+                .map(this::toPromotionResponse)
+                .toList();
+
+        return ResponseEntity.ok(promotions);
+    }
+
     // ADMIN can manage promotions for any hotel; a HOTEL_MANAGER only for the hotel they manage —
     // same ownership rule ServiceService.createService uses for services.
     private boolean hasHotelAccess(User actor, Long hotelId) {
@@ -275,6 +301,7 @@ public class PromotionService {
                 .active(promo.getActive())
                 .minBookingAmount(promo.getMinBookingAmount())
                 .maxDiscountAmount(promo.getMaxDiscountAmount())
+                .hotelLongImage(promo.getHotel() != null ? promo.getHotel().getLongImage() : null)
                 .build();
     }
 

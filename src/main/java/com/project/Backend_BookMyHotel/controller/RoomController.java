@@ -65,4 +65,16 @@ public class RoomController {
         return roomService.deleteRoom(branchId, roomId);
     }
 
+    // Delete a single image from a room's gallery. Provide either publicId (Cloudinary) or url (external image).
+    @PreAuthorize("hasAuthority('ADMIN')")
+    @DeleteMapping("/branches/{branchId}/{roomId}/images")
+    public ResponseEntity<?> deleteRoomImage(
+            @PathVariable Long branchId,
+            @PathVariable String roomId,
+            @RequestParam(required = false) String publicId,
+            @RequestParam(required = false) String url
+    ) {
+        return roomService.deleteRoomImage(branchId, roomId, publicId, url);
+    }
+
 }

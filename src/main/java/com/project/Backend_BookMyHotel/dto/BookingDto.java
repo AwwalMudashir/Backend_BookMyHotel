@@ -20,5 +20,7 @@ public class BookingDto {
     private BookingStatus status;
     private BigDecimal totalPrice;
     private Integer ecoPointsEarned;
+    private Integer ecoPointsRedeemed;
+    private BigDecimal ecoPointsDiscount;
     private LocalDateTime createdAt;
 }

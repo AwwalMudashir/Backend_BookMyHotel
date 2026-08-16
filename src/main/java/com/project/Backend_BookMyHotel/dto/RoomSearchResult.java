@@ -25,4 +25,6 @@ public class RoomSearchResult {
     private Map<String, Object> amenities;
     private Set<RoomTag> tags;
     private boolean available;
+    // Primary thumbnail for search/listing views (may be null)
+    private String thumbnail;
 }

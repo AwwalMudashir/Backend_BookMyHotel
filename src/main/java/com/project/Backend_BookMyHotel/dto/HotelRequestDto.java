@@ -12,4 +12,5 @@ public class HotelRequestDto {
     private String description;
     private Integer starRating;
     private String logoUrl;
+    private String longImage;
 }

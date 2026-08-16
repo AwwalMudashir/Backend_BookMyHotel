@@ -22,4 +22,5 @@ public class PromotionResponse {
     private Boolean active;
     private BigDecimal minBookingAmount;
     private BigDecimal maxDiscountAmount;
+    private String hotelLongImage;
 }

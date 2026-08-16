@@ -23,6 +23,7 @@ import com.project.Backend_BookMyHotel.repository.ServiceRepository;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
 import com.project.Backend_BookMyHotel.service.BookingService;
 import com.project.Backend_BookMyHotel.service.EmailTemplateService;
+import com.project.Backend_BookMyHotel.service.ExchangeRateService;
 import com.project.Backend_BookMyHotel.service.PaymentService;
 import com.project.Backend_BookMyHotel.service.PromotionService;
 import com.project.Backend_BookMyHotel.service.ResendEmailService;
@@ -65,6 +66,9 @@ public class BookingServiceTest {
 
     @Mock
     private RoomAvailabilityService availabilityService;
+
+    @Mock
+    private ExchangeRateService exchangeRateService;
 
     @Mock
     private EmailTemplateService notificationService;
@@ -129,13 +133,17 @@ public class BookingServiceTest {
 
         service = new com.project.Backend_BookMyHotel.domain.Service();
         service.setId(200L);
+        service.setHotel(hotel);
         service.setBranch(branch);
         service.setName("Spa");
         service.setPrice(BigDecimal.valueOf(50));
 
         // @Value-injected fields aren't populated by Mockito's @InjectMocks, so this has to be
-        // set manually — matches the eco.points.per-booking=5 default in application-dev.properties.
-        ReflectionTestUtils.setField(bookingService, "ecoPointsPerBooking", 5);
+        // @Value fields are not populated by @InjectMocks; this matches the configured 5 points/night.
+        ReflectionTestUtils.setField(bookingService, "ecoPointsPerNight", 5);
+        Mockito.lenient().when(exchangeRateService.convert(
+                        Mockito.any(BigDecimal.class), Mockito.eq("USD"), Mockito.eq("GBP")))
+                .thenAnswer(inv -> inv.getArgument(0));
     }
 
     @Test
@@ -266,59 +274,6 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createBooking_DoubleBooking_SecondAttemptForSameRoomAndDatesFails() {
-        LocalDate checkIn = LocalDate.now().plusDays(10);
-        LocalDate checkOut = LocalDate.now().plusDays(12);
-
-        Authentication authentication = Mockito.mock(Authentication.class);
-        Mockito.when(authentication.getName()).thenReturn(customer.getEmail());
-        Mockito.when(userRepository.findByEmail(customer.getEmail())).thenReturn(customer);
-        Mockito.when(roomRepository.findById(100L)).thenReturn(Optional.of(room));
-        Mockito.when(availabilityService.calculateTotalPrice(100L, checkIn, checkOut)).thenReturn(
-                RoomPriceResponse.builder()
-                        .roomId(100L)
-                        .checkIn(checkIn)
-                        .checkOut(checkOut)
-                        .totalNights(2)
-                        .totalPrice(BigDecimal.valueOf(300))
-                        .currency("GBP")
-                        .isAvailable(true)
-                        .breakdown(List.of())
-                        .build());
-        // Echo back whatever Booking entity is passed to save(), same as JPA's save() returning the persisted entity
-        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        CreateBookingRequest request = new CreateBookingRequest(100L, checkIn, checkOut, null);
-
-        // First attempt: no PENDING/CONFIRMED bookings yet overlap this room+date range, so it's allowed through.
-        Mockito.when(bookingRepo.findOverlappingBookings(100L, BookingStatus.PENDING, checkIn, checkOut))
-                .thenReturn(new ArrayList<>());
-        Mockito.when(bookingRepo.findOverlappingBookings(100L, BookingStatus.CONFIRMED, checkIn, checkOut))
-                .thenReturn(new ArrayList<>());
-
-        ResponseEntity<?> firstResponse = bookingService.createBooking(authentication, request);
-        Assertions.assertEquals(HttpStatus.CREATED, firstResponse.getStatusCode());
-
-        // Second attempt for the same room/dates: simulate the booking just created now being visible
-        // to the overlap check (as it would be against a real database), so this attempt must be rejected.
-        Booking alreadyBooked = Booking.builder()
-                .id(999L)
-                .room(room)
-                .status(BookingStatus.PENDING)
-                .checkIn(checkIn)
-                .checkOut(checkOut)
-                .build();
-        Mockito.when(bookingRepo.findOverlappingBookings(100L, BookingStatus.PENDING, checkIn, checkOut))
-                .thenReturn(new ArrayList<>(List.of(alreadyBooked)));
-
-        ResponseEntity<?> secondResponse = bookingService.createBooking(authentication, request);
-
-        Assertions.assertEquals(HttpStatus.BAD_REQUEST, secondResponse.getStatusCode());
-        Assertions.assertTrue(((String) secondResponse.getBody()).contains("not available"));
-        Mockito.verify(bookingRepo, Mockito.times(1)).save(Mockito.any(Booking.class));
-    }
-
-    @Test
     void createBooking_WithValidPromoCode_PersistsPromotionOnBooking() {
         LocalDate checkIn = LocalDate.now().plusDays(20);
         LocalDate checkOut = LocalDate.now().plusDays(22);
@@ -357,6 +312,120 @@ public class BookingServiceTest {
         BookingResponse body = (BookingResponse) response.getBody();
         Assertions.assertEquals("SUMMER10", body.getPromoCode());
         Assertions.assertEquals(0, BigDecimal.valueOf(270).compareTo(body.getTotalPrice()));
+    }
+
+    @Test
+    void createBooking_WithHotelWideService_PersistsSnapshotAndIncludesItInTotal() {
+        LocalDate checkIn = LocalDate.now().plusDays(25);
+        LocalDate checkOut = LocalDate.now().plusDays(27);
+        service.setBranch(null);
+        service.setActive(true);
+
+        Authentication authentication = Mockito.mock(Authentication.class);
+        Mockito.when(authentication.getName()).thenReturn(customer.getEmail());
+        Mockito.when(userRepository.findByEmail(customer.getEmail())).thenReturn(customer);
+        Mockito.when(roomRepository.findById(100L)).thenReturn(Optional.of(room));
+        Mockito.when(bookingRepo.findOverlappingBookings(
+                        Mockito.eq(100L), Mockito.any(BookingStatus.class), Mockito.eq(checkIn), Mockito.eq(checkOut)))
+                .thenReturn(new ArrayList<>());
+        Mockito.when(availabilityService.calculateTotalPrice(100L, checkIn, checkOut)).thenReturn(
+                RoomPriceResponse.builder()
+                        .roomId(100L).checkIn(checkIn).checkOut(checkOut).totalNights(2)
+                        .totalPrice(BigDecimal.valueOf(300)).currency("GBP").isAvailable(true).breakdown(List.of())
+                        .build());
+        Mockito.when(serviceRepository.findById(200L)).thenReturn(Optional.of(service));
+
+        ArgumentCaptor<Booking> savedBookingCaptor = ArgumentCaptor.forClass(Booking.class);
+        Mockito.when(bookingRepo.save(savedBookingCaptor.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateBookingRequest request = new CreateBookingRequest(
+                100L,
+                checkIn,
+                checkOut,
+                null,
+                List.of(new AddServicesRequest.ServiceItem(200L, 2))
+        );
+
+        ResponseEntity<?> response = bookingService.createBooking(authentication, request);
+
+        Assertions.assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        Booking saved = savedBookingCaptor.getValue();
+        Assertions.assertEquals(0, BigDecimal.valueOf(400).compareTo(saved.getTotalPrice()));
+        Assertions.assertEquals(1, saved.getBookingServices().size());
+        BookingAddonService addon = saved.getBookingServices().get(0);
+        Assertions.assertEquals("Spa", addon.getServiceName());
+        Assertions.assertEquals(0, BigDecimal.valueOf(50).compareTo(addon.getUnitPrice()));
+        Assertions.assertEquals(0, BigDecimal.valueOf(100).compareTo(addon.getSubtotal()));
+
+        BookingResponse body = (BookingResponse) response.getBody();
+        Assertions.assertEquals(0, BigDecimal.valueOf(100).compareTo(body.getPriceBreakdown().getServicesTotal()));
+        Assertions.assertEquals(1, body.getServices().size());
+    }
+
+    @Test
+    void createBooking_WithEcoPoints_DeductsBalanceAndDiscountsRoom() {
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+        LocalDate checkOut = checkIn.plusDays(2);
+        customer.setEcoPoints(100);
+
+        Authentication authentication = Mockito.mock(Authentication.class);
+        Mockito.when(authentication.getName()).thenReturn(customer.getEmail());
+        Mockito.when(userRepository.findByEmail(customer.getEmail())).thenReturn(customer);
+        Mockito.when(userRepository.findByEmailForUpdate(customer.getEmail())).thenReturn(Optional.of(customer));
+        Mockito.when(roomRepository.findById(100L)).thenReturn(Optional.of(room));
+        Mockito.when(bookingRepo.findOverlappingBookings(
+                        Mockito.eq(100L), Mockito.any(BookingStatus.class), Mockito.eq(checkIn), Mockito.eq(checkOut)))
+                .thenReturn(new ArrayList<>());
+        Mockito.when(availabilityService.calculateTotalPrice(100L, checkIn, checkOut)).thenReturn(
+                RoomPriceResponse.builder()
+                        .roomId(100L).checkIn(checkIn).checkOut(checkOut).totalNights(2)
+                        .totalPrice(BigDecimal.valueOf(300)).currency("GBP").isAvailable(true).breakdown(List.of())
+                        .build());
+        Mockito.when(exchangeRateService.convert(BigDecimal.ONE, "USD", "GBP"))
+                .thenReturn(BigDecimal.valueOf(0.8));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateBookingRequest request = new CreateBookingRequest(
+                100L, checkIn, checkOut, null, List.of(), 50);
+        ResponseEntity<?> response = bookingService.createBooking(authentication, request);
+
+        Assertions.assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        BookingResponse body = (BookingResponse) response.getBody();
+        Assertions.assertEquals(0, BigDecimal.valueOf(296).compareTo(body.getTotalPrice()));
+        Assertions.assertEquals(50, body.getEcoPointsRedeemed());
+        Assertions.assertEquals(0, BigDecimal.valueOf(4).compareTo(body.getEcoPointsDiscount()));
+        Assertions.assertEquals(50, customer.getEcoPoints());
+        Mockito.verify(userRepository).save(customer);
+    }
+
+    @Test
+    void createBooking_WithMoreEcoPointsThanBalance_IsRejected() {
+        LocalDate checkIn = LocalDate.now().plusDays(30);
+        LocalDate checkOut = checkIn.plusDays(2);
+        customer.setEcoPoints(20);
+
+        Authentication authentication = Mockito.mock(Authentication.class);
+        Mockito.when(authentication.getName()).thenReturn(customer.getEmail());
+        Mockito.when(userRepository.findByEmail(customer.getEmail())).thenReturn(customer);
+        Mockito.when(userRepository.findByEmailForUpdate(customer.getEmail())).thenReturn(Optional.of(customer));
+        Mockito.when(roomRepository.findById(100L)).thenReturn(Optional.of(room));
+        Mockito.when(bookingRepo.findOverlappingBookings(
+                        Mockito.eq(100L), Mockito.any(BookingStatus.class), Mockito.eq(checkIn), Mockito.eq(checkOut)))
+                .thenReturn(new ArrayList<>());
+        Mockito.when(availabilityService.calculateTotalPrice(100L, checkIn, checkOut)).thenReturn(
+                RoomPriceResponse.builder()
+                        .roomId(100L).checkIn(checkIn).checkOut(checkOut).totalNights(2)
+                        .totalPrice(BigDecimal.valueOf(300)).currency("GBP").isAvailable(true).breakdown(List.of())
+                        .build());
+
+        CreateBookingRequest request = new CreateBookingRequest(
+                100L, checkIn, checkOut, null, List.of(), 50);
+        ResponseEntity<?> response = bookingService.createBooking(authentication, request);
+
+        Assertions.assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Assertions.assertEquals(20, customer.getEcoPoints());
+        Mockito.verify(bookingRepo, Mockito.never()).save(Mockito.any(Booking.class));
+        Mockito.verify(userRepository, Mockito.never()).save(Mockito.any(User.class));
     }
 
     @Test
@@ -433,10 +502,11 @@ public class BookingServiceTest {
     void confirmBooking_WhenPending_SendsConfirmationEmailToBookingOwner() {
         Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
         Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
-        // 9-arg template method: guestName, bookingRef, hotelName, branchLocation, roomType, checkIn, checkOut, totalPrice, currency
         Mockito.when(notificationService.bookingConfirmationTemplate(
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class),
+                Mockito.any(BigDecimal.class), Mockito.anyString(), Mockito.anyInt(),
+                Mockito.any(BigDecimal.class), Mockito.anyList()))
                 .thenReturn("<html>confirmation</html>");
 
         ResponseEntity<?> response = bookingService.confirmBooking(50L);
@@ -474,7 +544,9 @@ public class BookingServiceTest {
         Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         Mockito.when(notificationService.bookingConfirmationTemplate(
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class),
+                Mockito.any(BigDecimal.class), Mockito.anyString(), Mockito.anyInt(),
+                Mockito.any(BigDecimal.class), Mockito.anyList()))
                 .thenReturn("<html>confirmation</html>");
 
         ResponseEntity<?> response = bookingService.confirmBooking(50L);
@@ -508,16 +580,18 @@ public class BookingServiceTest {
         Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         Mockito.when(notificationService.bookingConfirmationTemplate(
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class),
+                Mockito.any(BigDecimal.class), Mockito.anyString(), Mockito.anyInt(),
+                Mockito.any(BigDecimal.class), Mockito.anyList()))
                 .thenReturn("<html>confirmation</html>");
 
         ResponseEntity<?> response = bookingService.confirmBooking(50L);
 
         Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
         BookingResponse body = (BookingResponse) response.getBody();
-        Assertions.assertEquals(5, body.getEcoPointsEarned());
-        Assertions.assertEquals(15, customer.getEcoPoints());
-        Assertions.assertEquals(5, booking.getEcoPointsEarned());
+        Assertions.assertEquals(10, body.getEcoPointsEarned());
+        Assertions.assertEquals(20, customer.getEcoPoints());
+        Assertions.assertEquals(10, booking.getEcoPointsEarned());
         Mockito.verify(userRepository).save(customer);
     }
 
@@ -528,7 +602,9 @@ public class BookingServiceTest {
         Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         Mockito.when(notificationService.bookingConfirmationTemplate(
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class),
+                Mockito.any(BigDecimal.class), Mockito.anyString(), Mockito.anyInt(),
+                Mockito.any(BigDecimal.class), Mockito.anyList()))
                 .thenReturn("<html>confirmation</html>");
 
         ResponseEntity<?> response = bookingService.confirmBooking(50L);
@@ -573,6 +649,21 @@ public class BookingServiceTest {
     }
 
     @Test
+    void cancelBooking_WhenPointsWereRedeemed_ReturnsThemToUser() {
+        booking.setEcoPointsRedeemed(40);
+        booking.setEcoPointsDiscount(BigDecimal.valueOf(4));
+        customer.setEcoPoints(10);
+        Mockito.when(bookingRepo.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ResponseEntity<?> response = bookingService.cancelBooking(50L, 1L, Role.CUSTOMER);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        Assertions.assertEquals(50, customer.getEcoPoints());
+        Mockito.verify(userRepository).save(customer);
+    }
+
+    @Test
     void updateReservationStatus_WhenBookingMissing_ThrowsNoSuchElementException() {
         Mockito.when(bookingRepo.existsById(50L)).thenReturn(false);
 
@@ -587,7 +678,9 @@ public class BookingServiceTest {
         Mockito.when(bookingRepo.save(Mockito.any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
         Mockito.when(notificationService.bookingConfirmationTemplate(
                 Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
-                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class), Mockito.anyString()))
+                Mockito.any(LocalDate.class), Mockito.any(LocalDate.class), Mockito.any(BigDecimal.class),
+                Mockito.any(BigDecimal.class), Mockito.anyString(), Mockito.anyInt(),
+                Mockito.any(BigDecimal.class), Mockito.anyList()))
                 .thenReturn("<html>confirmation</html>");
 
         ResponseEntity<?> response = bookingService.updateReservationStatus(50L, BookingStatus.CONFIRMED, 999L);

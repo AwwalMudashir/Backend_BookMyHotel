@@ -12,7 +12,7 @@ import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class JwtUtilTest {
+class  JwtUtilTest {
 
     private JwtUtil jwtUtil;
 
@@ -25,35 +25,39 @@ class JwtUtilTest {
 
     @Test
     void generateTokenShouldExposeUsernameAndRole() {
-        String token = jwtUtil.generateToken("alice", Role.CUSTOMER);
+        String token = jwtUtil.generateToken("awwalmudashir@gmail.com", Role.CUSTOMER);
 
         assertNotNull(token);
-        assertEquals("alice", jwtUtil.extractUsername(token));
+        System.out.println("Extracted Username: " + jwtUtil.extractUsername(token));
+        System.out.println("Extracted Role: " + jwtUtil.extractRole(token));
+
+        assertEquals("awwalmudashir@gmail.com", jwtUtil.extractUsername(token));
         assertEquals("CUSTOMER", jwtUtil.extractRole(token));
         assertNotNull(jwtUtil.extractExpiration(token));
     }
 
     @Test
     void validateTokenShouldSucceedForMatchingUserAndFailForDifferentUser() {
-        String token = jwtUtil.generateToken("alice", Role.CUSTOMER);
-        UserDetails matchingUser = User.withUsername("alice")
+        String token = jwtUtil.generateToken("awwalmudashir@gmail.com", Role.CUSTOMER);
+        UserDetails matchingUser = User.withUsername("awwalmudashir@gmail.com")
                 .password("password")
                 .authorities("ROLE_CUSTOMER")
                 .build();
-        UserDetails differentUser = User.withUsername("bob")
+        UserDetails differentUser = User.withUsername("bob@gmail.com")
                 .password("password")
                 .authorities("ROLE_CUSTOMER")
                 .build();
 
         assertTrue(jwtUtil.validateToken(token, matchingUser));
         assertFalse(jwtUtil.validateToken(token, differentUser));
+        System.out.println("Succeeded");
     }
 
     @Test
     void validateTokenShouldFailWhenTokenIsExpired() {
         ReflectionTestUtils.setField(jwtUtil, "expiration", 1L);
-        String token = jwtUtil.generateToken("alice", Role.CUSTOMER);
-
+        String token = jwtUtil.generateToken("awwalmudashir@gmail.com", Role.CUSTOMER);
         assertFalse(jwtUtil.validateToken(token));
+        System.out.println("Invalid or Expired JWT Token");
     }
 }

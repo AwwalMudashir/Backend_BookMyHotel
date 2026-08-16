@@ -291,7 +291,8 @@ public class UserService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
-                user.getRole()
+                user.getRole(),
+                SessionUserDto.from(user)
         );
 
         return ResponseEntity.ok(jwtResponse);
@@ -311,7 +312,12 @@ public class UserService {
         User user = rotated.getUser();
         String newAccessToken = jwtUtil.generateToken(user.getEmail(), user.getRole());
 
-        return ResponseEntity.ok(new TokenRefreshResponse(newAccessToken, rotated.getToken()));
+        return ResponseEntity.ok(new TokenRefreshResponse(
+                newAccessToken,
+                rotated.getToken(),
+                "Bearer",
+                SessionUserDto.from(user)
+        ));
     }
 
     public ResponseEntity<?> getCurrentUser(Authentication authentication) {
@@ -326,32 +332,7 @@ public class UserService {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
         }
 
-        // Map domain Bookings to lightweight DTOs to avoid recursive serialization of User <-> Booking
-        List<BookingDto> bookingDtos = user.getBookings() == null ? List.of() : user.getBookings().stream().map(b -> new BookingDto(
-                b.getId(),
-                b.getReference(),
-                b.getCheckIn(),
-                b.getCheckOut(),
-                b.getStatus(),
-                b.getTotalPrice(),
-                b.getEcoPointsEarned(),
-                b.getCreatedAt()
-        )).toList();
-
-        CurrentUserDto dto = new CurrentUserDto(
-                user.getUserId(),
-                user.getEmail(),
-                user.getFirstName(),
-                user.getLastName(),
-                user.getGender(),
-                user.getRole(),
-                user.getManagedHotel(),
-                bookingDtos,
-                user.getReviews(),
-                user.getEcoPoints()
-        );
-
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(SessionUserDto.from(user));
     }
 
     public ResponseEntity<?> getCurrentUserPoints(Authentication authentication) {
@@ -396,35 +377,15 @@ public class UserService {
             user.setGender(updateDto.getGender());
         }
 
+        // Accept email notification preference if present
+        if (updateDto.getEmailNotifications() != null) {
+            user.setEmailNotifications(updateDto.getEmailNotifications());
+        }
+
         // 4. Save the updated user back to the database
         User updatedUser = userRepo.save(user);
 
-        // 5. Return the updated user info using your existing CurrentUserDto pattern
-        List<BookingDto> bookingDtos = updatedUser.getBookings() == null ? List.of() : updatedUser.getBookings().stream().map(b -> new BookingDto(
-                b.getId(),
-                b.getReference(),
-                b.getCheckIn(),
-                b.getCheckOut(),
-                b.getStatus(),
-                b.getTotalPrice(),
-                b.getEcoPointsEarned(),
-                b.getCreatedAt()
-        )).toList();
-
-        CurrentUserDto responseDto = new CurrentUserDto(
-                updatedUser.getUserId(),
-                updatedUser.getEmail(),
-                updatedUser.getFirstName(),
-                updatedUser.getLastName(),
-                updatedUser.getGender(),
-                updatedUser.getRole(),
-                updatedUser.getManagedHotel(),
-                bookingDtos,
-                updatedUser.getReviews(),
-                updatedUser.getEcoPoints()
-        );
-
-        return ResponseEntity.ok(responseDto);
+        return ResponseEntity.ok(SessionUserDto.from(updatedUser));
     }
 
     public ResponseEntity<?> resendOtp(String userEmail) {
@@ -463,12 +424,23 @@ public class UserService {
         response.put("message", "A new OTP has been sent.");
         response.put("entryId", otpRecord.getId()); // return the entry ID
 
+        
         return ResponseEntity.ok(response);
     }
 
     public ResponseEntity<?> forgotPassword(String userEmail) {
-        if (!userRepo.existsByEmail(userEmail)) {
+        // Use a multi-result-safe lookup in case the DB has duplicate-case rows.
+        List<User> users = userRepo.findAllByEmail(userEmail);
+
+        if (users == null || users.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User with this email does not exist.");
+        }
+
+        // If any matching account is a Google OAuth account, instruct the user to sign in with Google.
+        boolean anyGoogle = users.stream().anyMatch(u -> u.getGoogleId() != null);
+        if (anyGoogle) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body("This account was created via Google Sign-In. Please sign in with Google to access your account.");
         }
 
         String otp = generateSixDigitOtp();
@@ -487,7 +459,7 @@ public class UserService {
     }
 
     public ResponseEntity<?> verifyOtp(VerifyOtpDto verifyDto) {
-        // Query by entry_id (id) and email
+        // Query by entry_id (id) and email as supplied by the caller
         Optional<OtpVerification> otpRecordOpt = otpRepo.findByIdAndEmail(verifyDto.getEntryId(), verifyDto.getEmail());
 
         VerifyOtpResponse resp = new VerifyOtpResponse();
@@ -526,33 +498,74 @@ public class UserService {
         return new ResponseEntity<>(resp,HttpStatus.OK);
     }
 
-    public ResponseEntity<?> resetPassword(Authentication authentication , ResetPasswordDto resetDto) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
+    public ResponseEntity<?> resetPassword(Authentication authentication, ResetPasswordDto resetDto) {
+        String email = null;
+        if (authentication != null && authentication.isAuthenticated()) {
+            email = authentication.getName();
         }
 
-        String email = authentication.getName();
-        User user = userRepo.findByEmail(email);
+        if ((email == null || email.isBlank()) && resetDto != null) {
+            email = resetDto.getEmail();
+        }
 
+        if (email == null || email.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "message", "Email is required to reset the password."));
+        }
+
+        String normalizedEmail = email.trim().toLowerCase();
+        String newPassword = resetDto != null ? resetDto.getNewPassword() : null;
+        if (newPassword == null || newPassword.isBlank()) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "message", "New password is required."));
+        }
+
+        String confirmPassword = resetDto != null ? resetDto.getConfirmPassword() : null;
+        if (confirmPassword != null && !confirmPassword.isBlank() && !newPassword.equals(confirmPassword)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("success", false, "message", "Passwords do not match."));
+        }
+
+        User user = userRepo.findByEmail(normalizedEmail);
         if (user == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("success", false, "message", "User not found."));
         }
 
-        String encryptedPassword = bencoder.encode(resetDto.getNewPassword());
+        Optional<OtpVerification> otpVerificationOpt = otpRepo.findByEmail(normalizedEmail);
+        boolean hasVerifiedResetToken = false;
+        OtpVerification otpVerification = null;
+        if (otpVerificationOpt.isPresent()) {
+            otpVerification = otpVerificationOpt.get();
+            String resetToken = resetDto != null ? resetDto.getResetToken() : null;
+            if (resetToken != null && !resetToken.isBlank()) {
+                hasVerifiedResetToken = resetToken.equals(otpVerification.getResetToken());
+            } else {
+                hasVerifiedResetToken = otpVerification.getResetToken() != null && !otpVerification.getResetToken().isBlank();
+            }
+        }
+
+        if (!hasVerifiedResetToken) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("success", false, "message", "Password reset requires a verified OTP. Please verify the code first."));
+        }
+
+        String encryptedPassword = bencoder.encode(newPassword);
         user.setPassword(encryptedPassword);
         userRepo.save(user);
 
-        String html = emailTemplateService.passwordChangedTemplate(user.getFirstName());
+        if (otpVerification != null) {
+            otpRepo.delete(otpVerification);
+        }
 
-        System.out.println("HTML template built, sending email");
+        String html = emailTemplateService.passwordChangedTemplate(user.getFirstName());
         resendEmailService.sendEmail(
                 user.getEmail(),
                 "Password Updated Successfully !",
                 html
         );
-        System.out.println("Email Sent successfully");
 
-        return ResponseEntity.ok("Password updated successfully.");
+        return ResponseEntity.ok(Map.of("success", true, "message", "Password updated successfully."));
     }
 
     @Transactional

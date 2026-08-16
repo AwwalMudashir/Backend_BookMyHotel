@@ -25,6 +25,12 @@ public class BookingAddonService {
     @JoinColumn(name = "service_id", nullable = false)
     private Service service;
 
+    @Column(name = "service_name", nullable = false)
+    private String serviceName;
+
+    @Column(name = "unit_price", nullable = false, precision = 12, scale = 2)
+    private BigDecimal unitPrice;
+
     private Integer quantity;
     private BigDecimal subtotal;
 }

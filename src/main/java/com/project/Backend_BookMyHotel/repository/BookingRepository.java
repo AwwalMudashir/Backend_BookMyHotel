@@ -13,6 +13,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +32,12 @@ public interface BookingRepository extends JpaRepository<Booking, Long>, JpaSpec
             @Param("status") BookingStatus status,
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate
+    );
+
+    boolean existsByRoom_IdAndStatusInAndCheckOutAfter(
+            Long roomId,
+            Collection<BookingStatus> statuses,
+            LocalDate date
     );
 
     Booking findByReference(String reference);

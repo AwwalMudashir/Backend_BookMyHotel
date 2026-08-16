@@ -197,6 +197,8 @@ public class AnalyticsService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .ecoPointsEarned(booking.getEcoPointsEarned())
+                .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
+                .ecoPointsDiscount(booking.getEcoPointsDiscount())
                 .createdAt(booking.getCreatedAt())
                 .build();
     }

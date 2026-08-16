@@ -33,10 +33,13 @@ import java.math.RoundingMode;
 import java.nio.file.AccessDeniedException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -60,6 +63,9 @@ public class BookingService {
     private RoomAvailabilityService availabilityService;
 
     @Autowired
+    private ExchangeRateService exchangeRateService;
+
+    @Autowired
     private PromotionService promotionService;
 
     @Autowired
@@ -79,8 +85,10 @@ public class BookingService {
     @Autowired
     private PaymentService paymentService;
 
-    @Value("${eco.points.per-booking:5}")
-    private int ecoPointsPerBooking;
+    @Value("${eco.points.per-night:5}")
+    private int ecoPointsPerNight;
+
+    private static final BigDecimal ECO_POINTS_PER_USD = BigDecimal.TEN;
 
     /*
      What @CacheEvict does: The moment createBooking() or cancelBooking() runs successfully,
@@ -107,7 +115,17 @@ public class BookingService {
         Room room = roomRepository.findById(request.roomId())
                 .orElseThrow(() -> new NoSuchElementException("Room not found with ID: " + request.roomId()));
 
+        if (Boolean.FALSE.equals(room.getActive())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("This room has been removed from public listings and is no longer available for booking.");
+        }
+
         String email = authentication.getName();
+
+        int requestedEcoPoints = request.ecoPointsToRedeem() != null ? request.ecoPointsToRedeem() : 0;
+        if (requestedEcoPoints < 0) {
+            return ResponseEntity.badRequest().body("Eco points cannot be negative.");
+        }
 
         User user = userRepository.findByEmail(email);
 
@@ -133,6 +151,10 @@ public class BookingService {
         }
 
         BigDecimal basePrice = priceCalculation.getTotalPrice();
+        String bookingCurrency = priceCalculation.getCurrency();
+        if (bookingCurrency == null || bookingCurrency.isBlank()) {
+            bookingCurrency = room.getBranch().getCurrency();
+        }
         BigDecimal discountAmount = BigDecimal.ZERO;
         BigDecimal finalPrice = basePrice;
         String appliedPromoCode = null;
@@ -158,9 +180,77 @@ public class BookingService {
             }
         }
 
+        // 5. Validate and price extras against the room's branch. Hotel-wide services have no
+        // branch, while branch-specific services must match exactly. Prices and names are copied
+        // onto the booking line so later service edits never rewrite a customer's receipt.
+        List<BookingAddonService> addons = new ArrayList<>();
+        BigDecimal servicesTotal = BigDecimal.ZERO;
+        Set<Long> selectedServiceIds = new HashSet<>();
+        List<AddServicesRequest.ServiceItem> requestedServices = request.services() != null
+                ? request.services() : List.of();
+        BigDecimal usdToBookingRate = (!requestedServices.isEmpty() || requestedEcoPoints > 0)
+                ? exchangeRateService.convert(BigDecimal.ONE, "USD", bookingCurrency)
+                : BigDecimal.ONE;
+
+        for (AddServicesRequest.ServiceItem item : requestedServices) {
+            if (!selectedServiceIds.add(item.serviceId())) {
+                return ResponseEntity.badRequest().body("Each service can only be selected once.");
+            }
+
+            com.project.Backend_BookMyHotel.domain.Service service = serviceRepository.findById(item.serviceId())
+                    .orElseThrow(() -> new NoSuchElementException("Service not found with ID: " + item.serviceId()));
+
+            if (!isServiceAvailableAtBranch(service, room.getBranch())) {
+                return ResponseEntity.badRequest().body("Service " + service.getId() + " is not available at this room's branch.");
+            }
+
+            BigDecimal unitPrice = service.getPrice().multiply(usdToBookingRate)
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(item.quantity()))
+                    .setScale(2, RoundingMode.HALF_UP);
+            BookingAddonService addon = new BookingAddonService();
+            addon.setService(service);
+            addon.setServiceName(service.getName());
+            addon.setUnitPrice(unitPrice);
+            addon.setQuantity(item.quantity());
+            addon.setSubtotal(subtotal);
+            addons.add(addon);
+            servicesTotal = servicesTotal.add(subtotal);
+        }
+
+        // Promotions apply first. Eco points then discount the room only, while optional services
+        // remain fully priced. Ten points always represent one US dollar before conversion into
+        // the branch's payment currency.
+        BigDecimal ecoPointsDiscount = BigDecimal.ZERO;
+        if (requestedEcoPoints > 0) {
+            // Take the row lock only after all external pricing work is complete, then validate
+            // against the authoritative balance and keep it until the booking commits.
+            user = userRepository.findByEmailForUpdate(email).orElse(null);
+            if (user == null) {
+                return ResponseEntity.badRequest().body("User Not Found");
+            }
+            int availablePoints = user.getEcoPoints() != null ? user.getEcoPoints() : 0;
+            if (requestedEcoPoints > availablePoints) {
+                return ResponseEntity.badRequest().body("You do not have enough eco points for this redemption.");
+            }
+
+            BigDecimal discountInUsd = BigDecimal.valueOf(requestedEcoPoints)
+                    .divide(ECO_POINTS_PER_USD, 2, RoundingMode.HALF_UP);
+            ecoPointsDiscount = discountInUsd.multiply(usdToBookingRate)
+                    .setScale(2, RoundingMode.HALF_UP);
+
+            if (ecoPointsDiscount.compareTo(finalPrice) > 0) {
+                return ResponseEntity.badRequest().body("Eco point discount cannot exceed the room price after promotions.");
+            }
+        }
+
+        BigDecimal bookingTotal = finalPrice.subtract(ecoPointsDiscount).add(servicesTotal)
+                .setScale(2, RoundingMode.HALF_UP);
+
         String reference = "BMH" + UUID.randomUUID();
 
-        // 5. Persist PENDING Booking
+        // 6. Persist the PENDING booking and selected extras atomically. This prevents a payment
+        // page from ever seeing a room-only total while a second request is still attaching extras.
         Booking booking = Booking.builder()
                 .user(user)
                 .room(room)
@@ -169,13 +259,23 @@ public class BookingService {
                 .status(BookingStatus.PENDING)
                 .reference(reference)
                 .promotion(appliedPromotion)
-                .totalPrice(finalPrice)
+                .totalPrice(bookingTotal)
+                .ecoPointsRedeemed(requestedEcoPoints)
+                .ecoPointsDiscount(ecoPointsDiscount)
+                .bookingServices(addons)
                 .createdAt(LocalDateTime.now())
                 .build();
 
+        addons.forEach(addon -> addon.setBooking(booking));
+
+        if (requestedEcoPoints > 0) {
+            user.setEcoPoints(user.getEcoPoints() - requestedEcoPoints);
+            userRepository.save(user);
+        }
+
         Booking savedBooking = bookingRepo.save(booking);
 
-        // 6. Build & Return Response DTO
+        // 7. Build & Return Response DTO
         return new ResponseEntity<>(BookingResponse.builder()
                 .id(savedBooking.getId())
                 .roomId(room.getId())
@@ -188,11 +288,17 @@ public class BookingService {
                 .totalPrice(savedBooking.getTotalPrice())
                 .promoCode(appliedPromoCode)
                 .ecoPointsEarned(savedBooking.getEcoPointsEarned())
+                .ecoPointsRedeemed(savedBooking.getEcoPointsRedeemed())
+                .ecoPointsDiscount(savedBooking.getEcoPointsDiscount())
                 .createdAt(savedBooking.getCreatedAt())
+                .services(toAddonResponses(savedBooking))
                 .priceBreakdown(BookingResponse.PriceBreakdown.builder()
                         .basePrice(basePrice)
                         .discountAmount(discountAmount)
-                        .finalPrice(finalPrice)
+                        .servicesTotal(servicesTotal)
+                        .ecoPointsRedeemed(requestedEcoPoints)
+                        .ecoPointsDiscount(ecoPointsDiscount)
+                        .finalPrice(bookingTotal)
                         .appliedPromoCode(appliedPromoCode)
                         .build())
                 .build(), HttpStatus.CREATED);
@@ -214,10 +320,13 @@ public class BookingService {
         // the booking itself so cancelBooking() can claw back exactly this amount later rather
         // than guessing how many points a cancelled booking had contributed.
         if (booking.getRoom().getTags() != null && booking.getRoom().getTags().contains(RoomTag.ECO_FRIENDLY)) {
-            booking.setEcoPointsEarned(ecoPointsPerBooking);
-            User bookingUser = booking.getUser();
+            long nights = ChronoUnit.DAYS.between(booking.getCheckIn(), booking.getCheckOut());
+            int pointsEarned = Math.toIntExact(Math.multiplyExact(nights, ecoPointsPerNight));
+            booking.setEcoPointsEarned(pointsEarned);
+            User bookingUser = userRepository.findByEmailForUpdate(booking.getUser().getEmail())
+                    .orElse(booking.getUser());
             int currentPoints = bookingUser.getEcoPoints() != null ? bookingUser.getEcoPoints() : 0;
-            bookingUser.setEcoPoints(currentPoints + ecoPointsPerBooking);
+            bookingUser.setEcoPoints(currentPoints + pointsEarned);
             userRepository.save(bookingUser);
         }
 
@@ -230,17 +339,26 @@ public class BookingService {
             promotionService.incrementPromotionUsage(booking.getPromotion().getCode());
         }
 
-        // Send Email Confirmation
+        BigDecimal servicesTotal = bookingServicesTotal(booking);
+        BigDecimal accommodationTotal = booking.getTotalPrice()
+                .subtract(servicesTotal)
+                .add(booking.getEcoPointsDiscount() != null ? booking.getEcoPointsDiscount() : BigDecimal.ZERO);
+
+        // Send Email Confirmation, including every paid extra and the final charged total.
         String html = notificationService.bookingConfirmationTemplate(
-                booking.getUser().getFirstName() + booking.getUser().getLastName(),
+                (booking.getUser().getFirstName() + " " + booking.getUser().getLastName()).trim(),
                 booking.getReference(),
                 booking.getRoom().getBranch().getHotel().getName(),
                 booking.getRoom().getBranch().getName(),
                 booking.getRoom().getRoomType(),
                 booking.getCheckIn(),
                 booking.getCheckOut(),
+                accommodationTotal,
                 booking.getTotalPrice(),
-                booking.getRoom().getBranch().getCurrency()
+                booking.getRoom().getBranch().getCurrency(),
+                booking.getEcoPointsRedeemed(),
+                booking.getEcoPointsDiscount(),
+                toEmailServiceLines(booking)
         );
 
         // This runs in the same transaction as the payment/booking status writes above (this method
@@ -293,10 +411,13 @@ public class BookingService {
 
         // Claw back eco points this booking previously earned — only fires if it had already
         // been confirmed (a still-PENDING booking never had any awarded in the first place).
-        if (booking.getEcoPointsEarned() != null && booking.getEcoPointsEarned() > 0) {
-            User bookingUser = booking.getUser();
+        int pointsEarned = booking.getEcoPointsEarned() != null ? booking.getEcoPointsEarned() : 0;
+        int pointsRedeemed = booking.getEcoPointsRedeemed() != null ? booking.getEcoPointsRedeemed() : 0;
+        if (pointsEarned > 0 || pointsRedeemed > 0) {
+            User bookingUser = userRepository.findByEmailForUpdate(booking.getUser().getEmail())
+                    .orElse(booking.getUser());
             int currentPoints = bookingUser.getEcoPoints() != null ? bookingUser.getEcoPoints() : 0;
-            bookingUser.setEcoPoints(Math.max(0, currentPoints - booking.getEcoPointsEarned()));
+            bookingUser.setEcoPoints(Math.max(0, currentPoints - pointsEarned) + pointsRedeemed);
             userRepository.save(bookingUser);
             booking.setEcoPointsEarned(0);
         }
@@ -350,31 +471,41 @@ public class BookingService {
             return ResponseEntity.badRequest().body("You are not authorized to modify this booking.");
         }
 
-        if (booking.getStatus() != BookingStatus.PENDING && booking.getStatus() != BookingStatus.CONFIRMED) {
-            return ResponseEntity.badRequest().body("Services can only be added to PENDING or CONFIRMED bookings. Current status: " + booking.getStatus());
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            return ResponseEntity.badRequest().body("Services can only be changed before payment. Current status: " + booking.getStatus());
         }
 
         if (booking.getCheckIn().isBefore(LocalDate.now())) {
             return ResponseEntity.badRequest().body("Cannot add services after check-in has passed.");
         }
 
-        Long branchId = booking.getRoom().getBranch().getId();
+        if (booking.getPayments() != null && !booking.getPayments().isEmpty()) {
+            return ResponseEntity.badRequest().body("Services cannot be changed after payment has started.");
+        }
+
         List<BookingAddonService> newAddons = new ArrayList<>();
         BigDecimal addedTotal = BigDecimal.ZERO;
+        String bookingCurrency = booking.getRoom().getBranch().getCurrency();
+        BigDecimal usdToBookingRate = exchangeRateService.convert(BigDecimal.ONE, "USD", bookingCurrency);
 
         for (AddServicesRequest.ServiceItem item : request.services()) {
             com.project.Backend_BookMyHotel.domain.Service service = serviceRepository.findById(item.serviceId())
                     .orElseThrow(() -> new NoSuchElementException("Service not found with ID: " + item.serviceId()));
 
-            if (!service.getBranch().getId().equals(branchId)) {
+            if (!isServiceAvailableAtBranch(service, booking.getRoom().getBranch())) {
                 return ResponseEntity.badRequest().body("Service " + service.getId() + " is not offered at this booking's branch.");
             }
 
-            BigDecimal subtotal = service.getPrice().multiply(BigDecimal.valueOf(item.quantity()));
+            BigDecimal unitPrice = service.getPrice().multiply(usdToBookingRate)
+                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(item.quantity()))
+                    .setScale(2, RoundingMode.HALF_UP);
 
             BookingAddonService addon = new BookingAddonService();
             addon.setBooking(booking);
             addon.setService(service);
+            addon.setServiceName(service.getName());
+            addon.setUnitPrice(unitPrice);
             addon.setQuantity(item.quantity());
             addon.setSubtotal(subtotal);
 
@@ -404,8 +535,12 @@ public class BookingService {
             return ResponseEntity.badRequest().body("You are not authorized to modify this booking.");
         }
 
-        if (booking.getStatus() != BookingStatus.PENDING && booking.getStatus() != BookingStatus.CONFIRMED) {
-            return ResponseEntity.badRequest().body("Services can only be removed from PENDING or CONFIRMED bookings. Current status: " + booking.getStatus());
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            return ResponseEntity.badRequest().body("Services can only be changed before payment. Current status: " + booking.getStatus());
+        }
+
+        if (booking.getPayments() != null && !booking.getPayments().isEmpty()) {
+            return ResponseEntity.badRequest().body("Services cannot be changed after payment has started.");
         }
 
         List<BookingAddonService> addons = booking.getBookingServices();
@@ -452,21 +587,7 @@ public class BookingService {
             default -> throw new AccessDeniedException("Admins do not have access to personal booking lists.");
         }
 
-        return bookings.map(booking -> {
-            BookingResponse response = new BookingResponse();
-            response.setId(booking.getId());
-            response.setRoomId(booking.getRoom() != null ? booking.getRoom().getId() : null);
-            response.setRoomPublicId(booking.getRoom() != null ? booking.getRoom().getRoomId() : null);
-            response.setUserId(booking.getUser() != null ? booking.getUser().getId() : null);
-            response.setCheckIn(booking.getCheckIn());
-            response.setCheckOut(booking.getCheckOut());
-            response.setStatus(booking.getStatus());
-            response.setTotalPrice(booking.getTotalPrice());
-            response.setPromoCode(promoCodeOf(booking));
-            response.setEcoPointsEarned(booking.getEcoPointsEarned());
-            response.setCreatedAt(booking.getCreatedAt());
-            return response;
-        });
+        return bookings.map(this::toBookingResponseDto);
     }
 
     @Transactional(readOnly = true)
@@ -483,7 +604,9 @@ public class BookingService {
                 ? booking.getBookingServices().stream()
                 .map(s -> BookingDetailResponse.AddonServiceResponse.builder()
                         .id(s.getId())
-                        .serviceName(s.getService() != null ? s.getService().getName() : "Addon Service")
+                        .serviceId(s.getService() != null ? s.getService().getId() : null)
+                        .serviceName(addonName(s))
+                        .unitPrice(addonUnitPrice(s))
                         .quantity(s.getQuantity())
                         .subtotal(s.getSubtotal())
                         .build())
@@ -509,6 +632,7 @@ public class BookingService {
                 .roomId(booking.getRoom().getId())
                 .roomPublicId(booking.getRoom().getRoomId())
                 .roomNumber(booking.getRoom().getId().toString())
+                .hotelName(booking.getRoom().getBranch().getHotel().getName())
                 .userId(booking.getUser().getId())
                 .checkIn(booking.getCheckIn())
                 .checkOut(booking.getCheckOut())
@@ -516,6 +640,8 @@ public class BookingService {
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
                 .ecoPointsEarned(booking.getEcoPointsEarned())
+                .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
+                .ecoPointsDiscount(booking.getEcoPointsDiscount())
                 .createdAt(booking.getCreatedAt())
                 .services(services)
                 .payments(payments)
@@ -537,12 +663,16 @@ public class BookingService {
                 .roomId(booking.getRoom().getId())
                 .roomPublicId(booking.getRoom().getRoomId())
                 .userId(booking.getUser().getId())
+                .reference(booking.getReference())
                 .checkIn(booking.getCheckIn())
                 .checkOut(booking.getCheckOut())
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
                 .ecoPointsEarned(booking.getEcoPointsEarned())
+                .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
+                .ecoPointsDiscount(booking.getEcoPointsDiscount())
+                .services(toAddonResponses(booking))
                 .createdAt(booking.getCreatedAt())
                 .build();
     }
@@ -573,17 +703,6 @@ public class BookingService {
     }
 
     private BookingResponse toBookingResponseWithServices(Booking booking) {
-        List<BookingResponse.AddonServiceResponse> services = booking.getBookingServices() != null
-                ? booking.getBookingServices().stream()
-                .map(s -> BookingResponse.AddonServiceResponse.builder()
-                        .id(s.getId())
-                        .serviceName(s.getService() != null ? s.getService().getName() : "Addon Service")
-                        .quantity(s.getQuantity())
-                        .subtotal(s.getSubtotal())
-                        .build())
-                .toList()
-                : List.<BookingResponse.AddonServiceResponse>of();
-
         return BookingResponse.builder()
                 .id(booking.getId())
                 .roomId(booking.getRoom().getId())
@@ -596,9 +715,61 @@ public class BookingService {
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
                 .ecoPointsEarned(booking.getEcoPointsEarned())
-                .services(services)
+                .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
+                .ecoPointsDiscount(booking.getEcoPointsDiscount())
+                .services(toAddonResponses(booking))
                 .createdAt(booking.getCreatedAt())
                 .build();
+    }
+
+    private boolean isServiceAvailableAtBranch(com.project.Backend_BookMyHotel.domain.Service service,
+                                               com.project.Backend_BookMyHotel.domain.Branch branch) {
+        if (Boolean.FALSE.equals(service.getActive()) || branch == null || branch.getHotel() == null) return false;
+        Long serviceHotelId = service.getHotel() != null
+                ? service.getHotel().getId()
+                : service.getBranch() != null ? service.getBranch().getHotel().getId() : null;
+        if (!branch.getHotel().getId().equals(serviceHotelId)) return false;
+        return service.getBranch() == null || service.getBranch().getId().equals(branch.getId());
+    }
+
+    private String addonName(BookingAddonService addon) {
+        if (addon.getServiceName() != null && !addon.getServiceName().isBlank()) return addon.getServiceName();
+        return addon.getService() != null ? addon.getService().getName() : "Add-on service";
+    }
+
+    private BigDecimal addonUnitPrice(BookingAddonService addon) {
+        if (addon.getUnitPrice() != null) return addon.getUnitPrice();
+        return addon.getService() != null ? addon.getService().getPrice() : BigDecimal.ZERO;
+    }
+
+    private List<BookingResponse.AddonServiceResponse> toAddonResponses(Booking booking) {
+        if (booking.getBookingServices() == null) return List.of();
+        return booking.getBookingServices().stream()
+                .map(addon -> BookingResponse.AddonServiceResponse.builder()
+                        .id(addon.getId())
+                        .serviceId(addon.getService() != null ? addon.getService().getId() : null)
+                        .serviceName(addonName(addon))
+                        .unitPrice(addonUnitPrice(addon))
+                        .quantity(addon.getQuantity())
+                        .subtotal(addon.getSubtotal())
+                        .build())
+                .toList();
+    }
+
+    private BigDecimal bookingServicesTotal(Booking booking) {
+        if (booking.getBookingServices() == null) return BigDecimal.ZERO;
+        return booking.getBookingServices().stream()
+                .map(BookingAddonService::getSubtotal)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private List<EmailTemplateService.BookingServiceLine> toEmailServiceLines(Booking booking) {
+        if (booking.getBookingServices() == null) return List.of();
+        return booking.getBookingServices().stream()
+                .map(addon -> new EmailTemplateService.BookingServiceLine(
+                        addonName(addon), addonUnitPrice(addon), addon.getQuantity(), addon.getSubtotal()))
+                .toList();
     }
 
 }

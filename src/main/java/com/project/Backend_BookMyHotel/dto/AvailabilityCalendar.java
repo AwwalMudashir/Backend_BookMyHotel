@@ -1,8 +1,10 @@
 package com.project.Backend_BookMyHotel.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
@@ -23,6 +25,8 @@ public class AvailabilityCalendar {
     @AllArgsConstructor
     public static class DailyAvailability {
         private LocalDate date;
+        @JsonProperty("isAvailable")
+        @Getter(onMethod_ = @JsonProperty("isAvailable"))
         private boolean isAvailable;
         private BigDecimal dailyRate;
         private String currency;

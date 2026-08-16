@@ -7,6 +7,7 @@ import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.GoogleLoginRequest;
 import com.project.Backend_BookMyHotel.dto.JwtResponse;
 import com.project.Backend_BookMyHotel.dto.Role;
+import com.project.Backend_BookMyHotel.dto.SessionUserDto;
 import com.project.Backend_BookMyHotel.exception.InvalidGoogleTokenException;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
 import com.project.Backend_BookMyHotel.util.JwtUtil;
@@ -85,7 +86,8 @@ public class GoogleAuthService {
                 user.getEmail(),
                 user.getFirstName(),
                 user.getLastName(),
-                user.getRole()
+                user.getRole(),
+                SessionUserDto.from(user)
         );
 
         return ResponseEntity.ok(jwtResponse);

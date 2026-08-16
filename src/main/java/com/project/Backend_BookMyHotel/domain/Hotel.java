@@ -32,6 +32,9 @@ public class Hotel {
     @Column(name = "logo_url")
     private String logoUrl;
 
+    @Column(name = "long_image")
+    private String longImage;
+
     @OneToMany(mappedBy = "hotel", cascade = CascadeType.ALL)
     private List<Branch> branches;
 

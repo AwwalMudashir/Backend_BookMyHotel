@@ -70,4 +70,9 @@ public class PromotionController {
     public ResponseEntity<?> listActivePromotions(@RequestParam Long hotelId) {
         return promotionService.listActivePromotions(hotelId);
     }
+
+    @GetMapping("/active")
+    public ResponseEntity<?> listGlobalActivePromotions() {
+        return promotionService.listGlobalActivePromotions();
+    }
 }

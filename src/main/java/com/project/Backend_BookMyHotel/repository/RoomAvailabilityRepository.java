@@ -2,6 +2,7 @@ package com.project.Backend_BookMyHotel.repository;
 
 import com.project.Backend_BookMyHotel.domain.RoomAvailability;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,4 +27,8 @@ public interface RoomAvailabilityRepository extends JpaRepository<RoomAvailabili
             @Param("checkIn") LocalDate checkIn,
             @Param("checkOut") LocalDate checkOut
     );
+
+    @Modifying
+    @Query("DELETE FROM RoomAvailability ra WHERE ra.room.id = :roomId")
+    void deleteByRoomId(@Param("roomId") Long roomId);
 }

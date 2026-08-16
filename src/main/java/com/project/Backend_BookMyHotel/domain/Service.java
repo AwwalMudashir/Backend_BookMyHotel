@@ -19,7 +19,11 @@ public class Service {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "branch_id", nullable = false)
+    @JoinColumn(name = "hotel_id", nullable = false)
+    private Hotel hotel;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "branch_id")
     private Branch branch;
 
     @Enumerated(EnumType.STRING)
@@ -29,4 +33,7 @@ public class Service {
     private String name;
     private String description;
     private BigDecimal price;
+
+    @Column(nullable = false)
+    private Boolean active = true;
 }

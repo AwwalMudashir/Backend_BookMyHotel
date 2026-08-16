@@ -75,16 +75,17 @@ public class BranchService {
                         "Branch not found with id: " + branchId));
 
         return branch.getRooms().stream()
+                .filter(room -> !Boolean.FALSE.equals(room.getActive()))
                 .map(this::toRoomResponse)
                 .collect(Collectors.toList());
     }
 
     public List<ServiceResponse> getServicesByBranchId(Long branchId) {
-        Branch branch = branchRepo.findByIdWithServices(branchId)
+        Branch branch = branchRepo.findById(branchId)
                 .orElseThrow(() -> new EntityNotFoundException(
                         "Branch not found with id: " + branchId));
 
-        return branch.getServices().stream()
+        return serviceRepo.findAvailableForBranch(branch.getHotel().getId(), branchId).stream()
                 .map(this::toServiceResponse)
                 .collect(Collectors.toList());
     }
@@ -166,7 +167,7 @@ public class BranchService {
     }
 
     @Transactional
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> deleteBranch(Long hotelId, Long branchId) {
         Optional<Branch> branchOpt = branchRepo.findById(branchId);
         if (branchOpt.isEmpty()) {
@@ -233,13 +234,20 @@ public class BranchService {
 
     // Fully-qualified to avoid clashing with the org.springframework.stereotype.Service import above
     private ServiceResponse toServiceResponse(com.project.Backend_BookMyHotel.domain.Service service) {
+        Hotel hotel = service.getHotel() != null ? service.getHotel()
+                : service.getBranch() != null ? service.getBranch().getHotel() : null;
         return ServiceResponse.builder()
                 .id(service.getId())
-                .branchId(service.getBranch().getId())
+                .hotelId(hotel != null ? hotel.getId() : null)
+                .hotelName(hotel != null ? hotel.getName() : null)
+                .branchId(service.getBranch() != null ? service.getBranch().getId() : null)
+                .branchName(service.getBranch() != null ? service.getBranch().getName() : null)
+                .allBranches(service.getBranch() == null)
                 .name(service.getName())
                 .description(service.getDescription())
                 .price(service.getPrice())
                 .serviceType(service.getServiceType())
+                .active(service.getActive())
                 .build();
     }
 }

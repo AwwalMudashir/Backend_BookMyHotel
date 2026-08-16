@@ -15,6 +15,7 @@ import java.util.Set;
 public class RoomResponseDto {
     private Long roomNumber;
     private Long branchId;
+    private Long hotelId;
     private String branchName;
     private BigDecimal pricePerNight;
     private String currency;
@@ -26,4 +27,5 @@ public class RoomResponseDto {
     // Existing per-entity publicId (legacy) and the new public-facing roomId
     private String roomId;
     private Set<RoomTag> tags;
+    private Boolean active;
 }

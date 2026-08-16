@@ -7,8 +7,11 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
 public record CreateServiceRequest(
-        @NotNull(message = "Branch ID is required")
+        Long hotelId,
+
         Long branchId,
+
+        boolean allBranches,
 
         @NotBlank(message = "Name is required")
         String name,
@@ -21,4 +24,10 @@ public record CreateServiceRequest(
 
         @NotNull(message = "Service type is required")
         ServiceType serviceType
-) {}
+) {
+    // Keeps older callers source-compatible while the UI moves to explicit hotel/scope fields.
+    public CreateServiceRequest(Long branchId, String name, String description,
+                                BigDecimal price, ServiceType serviceType) {
+        this(null, branchId, false, name, description, price, serviceType);
+    }
+}

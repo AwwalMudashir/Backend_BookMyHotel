@@ -186,6 +186,12 @@ public class RoomSearchCacheService {
                 ? Set.copyOf(room.getTags())
                 : Collections.emptySet();
 
+        // Choose the first non-null image (if any) as the thumbnail for search results
+        String thumbnail = null;
+        if (room != null && room.getImages() != null && !room.getImages().isEmpty()) {
+            thumbnail = room.getImages().stream().filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        }
+
         return RoomSearchResult.builder()
                 .roomId(room != null ? room.getId() : null)
                 .hotelName(hotel != null ? hotel.getName() : "Unknown")
@@ -193,10 +199,11 @@ public class RoomSearchCacheService {
                 .roomType(room != null ? room.getRoomType() : "")
                 .pricePerNight(pricePerNight)
                 .totalPrice(totalPrice)
-                .currency(branch != null ? branch.getCurrency() : "USD")
+                .currency(room != null && room.getCurrency() != null ? room.getCurrency() : (branch != null ? branch.getCurrency() : "USD"))
                 .amenities(amenities)
                 .tags(tags)
                 .available(true)
+                .thumbnail(thumbnail)
                 .build();
     }
 

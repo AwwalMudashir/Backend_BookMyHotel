@@ -7,6 +7,7 @@ import com.project.Backend_BookMyHotel.dto.CreateServiceRequest;
 import com.project.Backend_BookMyHotel.dto.ServiceResponse;
 import com.project.Backend_BookMyHotel.dto.ServiceType;
 import com.project.Backend_BookMyHotel.repository.BranchRepository;
+import com.project.Backend_BookMyHotel.repository.HotelRepository;
 import com.project.Backend_BookMyHotel.repository.ServiceRepository;
 import com.project.Backend_BookMyHotel.service.ServiceService;
 import org.junit.jupiter.api.Assertions;
@@ -34,6 +35,9 @@ public class ServiceServiceTest {
     @Mock
     private BranchRepository branchRepository;
 
+    @Mock
+    private HotelRepository hotelRepository;
+
     @InjectMocks
     private ServiceService serviceService;
 
@@ -53,6 +57,7 @@ public class ServiceServiceTest {
 
         manager = new User();
         manager.setId(1L);
+        manager.setRole(com.project.Backend_BookMyHotel.dto.Role.HOTEL_MANAGER);
         manager.setManagedHotel(managedHotel);
     }
 
@@ -60,13 +65,14 @@ public class ServiceServiceTest {
     void getServicesByBranch_Success_ReturnsMappedServices() {
         com.project.Backend_BookMyHotel.domain.Service spa = new com.project.Backend_BookMyHotel.domain.Service();
         spa.setId(200L);
+        spa.setHotel(managedHotel);
         spa.setBranch(branch);
         spa.setName("Spa Access");
         spa.setPrice(BigDecimal.valueOf(50));
         spa.setServiceType(ServiceType.SPA);
 
-        Mockito.when(branchRepository.existsById(10L)).thenReturn(true);
-        Mockito.when(serviceRepository.findByBranchId(10L)).thenReturn(List.of(spa));
+        Mockito.when(branchRepository.findById(10L)).thenReturn(Optional.of(branch));
+        Mockito.when(serviceRepository.findAvailableForBranch(1000L, 10L)).thenReturn(List.of(spa));
 
         ResponseEntity<?> response = serviceService.getServicesByBranch(10L);
 
@@ -80,12 +86,11 @@ public class ServiceServiceTest {
 
     @Test
     void getServicesByBranch_WhenBranchNotFound_ReturnsNotFound() {
-        Mockito.when(branchRepository.existsById(999L)).thenReturn(false);
+        Mockito.when(branchRepository.findById(999L)).thenReturn(Optional.empty());
 
-        ResponseEntity<?> response = serviceService.getServicesByBranch(999L);
-
-        Assertions.assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
-        Mockito.verify(serviceRepository, Mockito.never()).findByBranchId(Mockito.anyLong());
+        Assertions.assertThrows(NoSuchElementException.class,
+                () -> serviceService.getServicesByBranch(999L));
+        Mockito.verify(serviceRepository, Mockito.never()).findAvailableForBranch(Mockito.anyLong(), Mockito.anyLong());
     }
 
     @Test
@@ -109,6 +114,25 @@ public class ServiceServiceTest {
         Assertions.assertEquals("Airport Pickup", body.getName());
         Assertions.assertEquals(10L, body.getBranchId());
         Assertions.assertEquals(ServiceType.CAR_HIRE, body.getServiceType());
+    }
+
+    @Test
+    void createService_ForAllBranches_PersistsHotelScopedService() {
+        Mockito.when(hotelRepository.findById(1000L)).thenReturn(Optional.of(managedHotel));
+        Mockito.when(serviceRepository.save(Mockito.any(com.project.Backend_BookMyHotel.domain.Service.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        CreateServiceRequest request = new CreateServiceRequest(
+                1000L, null, true, "Breakfast", "Daily buffet",
+                BigDecimal.valueOf(20), ServiceType.RESTAURANT);
+
+        ResponseEntity<?> response = serviceService.createService(request, manager);
+
+        Assertions.assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        ServiceResponse body = (ServiceResponse) response.getBody();
+        Assertions.assertTrue(body.getAllBranches());
+        Assertions.assertNull(body.getBranchId());
+        Assertions.assertEquals(1000L, body.getHotelId());
     }
 
     @Test

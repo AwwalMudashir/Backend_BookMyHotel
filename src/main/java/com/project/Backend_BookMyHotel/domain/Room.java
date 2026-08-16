@@ -62,6 +62,13 @@ public class Room {
     @Column(name = "images", columnDefinition = "jsonb")
     private List<String> images = new ArrayList<>();
 
+    // Per-room currency (ISO-4217). Optional — falls back to the branch currency when null.
+    @Column(name = "currency")
+    private String currency;
+
+    @Column(name = "is_active", nullable = false)
+    private Boolean active = true;
+
     // A proper, filterable classification set (eco-friendly, work-friendly, ...) — kept separate
     // from `amenities` above since these are curated category badges the search/UI need to query
     // directly, not arbitrary feature flags. Backed by its own join table (room_tags) rather than
@@ -80,6 +87,9 @@ public class Room {
         }
         if (this.publicIds == null) {
             this.publicIds = new ArrayList<>();
+        }
+        if (this.active == null) {
+            this.active = true;
         }
     }
 }

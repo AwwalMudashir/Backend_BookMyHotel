@@ -6,4 +6,5 @@ public interface HotelSummary {
     String getDescription();
     Integer getStarRating();
     String getLogoUrl();
+    String getLongImage();
 }

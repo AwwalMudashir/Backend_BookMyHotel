@@ -92,6 +92,8 @@ public class GoogleAuthServiceTest {
         assertEquals("newuser@gmail.com", body.getEmail());
         assertEquals("Ada", body.getFirstName());
         assertEquals(Role.CUSTOMER, body.getRole());
+        assertNotNull(body.getUser());
+        assertEquals("Ada", body.getUser().firstName());
 
         verify(userRepo).save(argThat(u ->
                 "newuser@gmail.com".equals(u.getEmail())

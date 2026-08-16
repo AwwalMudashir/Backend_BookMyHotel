@@ -24,6 +24,8 @@ public class BookingDetailResponse {
     private BigDecimal totalPrice;
     private String promoCode;
     private Integer ecoPointsEarned;
+    private Integer ecoPointsRedeemed;
+    private BigDecimal ecoPointsDiscount;
     private LocalDateTime createdAt;
     private List<AddonServiceResponse> services;
     private List<PaymentResponse> payments;
@@ -32,7 +34,9 @@ public class BookingDetailResponse {
     @Builder
     public static class AddonServiceResponse {
         private Long id;
+        private Long serviceId;
         private String serviceName;
+        private BigDecimal unitPrice;
         private Integer quantity;
         private BigDecimal subtotal;
     }

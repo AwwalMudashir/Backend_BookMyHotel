@@ -7,9 +7,17 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @Service
 public class EmailTemplateService {
+
+    public record BookingServiceLine(
+            String name,
+            BigDecimal unitPrice,
+            Integer quantity,
+            BigDecimal subtotal
+    ) {}
 
     public String userWelcomeTemplate(String name) {
         String escName = escapeHtml(name);
@@ -138,14 +146,20 @@ public class EmailTemplateService {
             String roomType,
             LocalDate checkInDate,
             LocalDate checkOutDate,
+            BigDecimal accommodationPrice,
             BigDecimal totalPrice,
-            String currency
+            String currency,
+            Integer ecoPointsRedeemed,
+            BigDecimal ecoPointsDiscount,
+            List<BookingServiceLine> services
     ) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy");
         String formattedCheckIn  = checkInDate.format(formatter);
         String formattedCheckOut = checkOutDate.format(formatter);
         long nights = ChronoUnit.DAYS.between(checkInDate, checkOutDate);
         String formattedPrice = currency + " " + totalPrice.setScale(2, RoundingMode.HALF_UP).toPlainString();
+        String serviceDetails = bookingServicesSection(
+                accommodationPrice, totalPrice, currency, ecoPointsRedeemed, ecoPointsDiscount, services);
 
         return """
 <div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#f4f6f8; color:#111827;">
@@ -219,6 +233,8 @@ public class EmailTemplateService {
             </table>
         </div>
 
+        %s
+
         <!-- CTA -->
         <div style="background:#f0fbf7; border:1px solid #a3d8c5; border-radius:8px; padding:16px; text-align:center;">
             <p style="margin:0; font-size:13px; color:#236952; line-height:1.4;">
@@ -238,8 +254,56 @@ public class EmailTemplateService {
                 escapeHtml(roomType),
                 nights, nights == 1 ? "" : "s",
                 formattedCheckIn,
-                formattedCheckOut
+                formattedCheckOut,
+                serviceDetails
         );
+    }
+
+    private String bookingServicesSection(BigDecimal accommodationPrice, BigDecimal totalPrice,
+                                          String currency, Integer ecoPointsRedeemed,
+                                          BigDecimal ecoPointsDiscount, List<BookingServiceLine> services) {
+        int redeemed = ecoPointsRedeemed != null ? ecoPointsRedeemed : 0;
+        BigDecimal pointsDiscount = ecoPointsDiscount != null ? ecoPointsDiscount : BigDecimal.ZERO;
+        if ((services == null || services.isEmpty()) && redeemed == 0) return "";
+
+        StringBuilder rows = new StringBuilder();
+        rows.append("<tr><td style=\"padding:7px 0;color:#6b7280;\">Accommodation</td>")
+                .append("<td align=\"right\" style=\"padding:7px 0;color:#111827;\">")
+                .append(formatMoney(currency, accommodationPrice)).append("</td></tr>");
+
+        if (redeemed > 0) {
+            rows.append("<tr><td style=\"padding:7px 0;color:#236952;\">Eco points discount ")
+                    .append("<span style=\"font-size:11px;color:#6b7280;\">(")
+                    .append(redeemed).append(" points)</span></td>")
+                    .append("<td align=\"right\" style=\"padding:7px 0;color:#236952;font-weight:700;\">-")
+                    .append(formatMoney(currency, pointsDiscount)).append("</td></tr>");
+        }
+
+        for (BookingServiceLine service : services != null ? services : List.<BookingServiceLine>of()) {
+            rows.append("<tr><td style=\"padding:7px 0;color:#6b7280;\">")
+                    .append(escapeHtml(service.name()))
+                    .append(" &times; ").append(service.quantity())
+                    .append(" <span style=\"font-size:11px;color:#9ca3af;\">(")
+                    .append(formatMoney(currency, service.unitPrice())).append(" each)</span></td>")
+                    .append("<td align=\"right\" style=\"padding:7px 0;color:#111827;\">")
+                    .append(formatMoney(currency, service.subtotal())).append("</td></tr>");
+        }
+
+        return """
+        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Services &amp; Payment Details</h3>
+        <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:28px;font-size:14px;">
+            %s
+            <tr>
+                <td style="padding:10px 0 4px;border-top:1px solid #e5e7eb;color:#111827;font-weight:700;">Total charged</td>
+                <td align="right" style="padding:10px 0 4px;border-top:1px solid #e5e7eb;color:#329775;font-weight:800;">%s</td>
+            </tr>
+        </table>
+        """.formatted(rows, formatMoney(currency, totalPrice));
+    }
+
+    private String formatMoney(String currency, BigDecimal amount) {
+        BigDecimal safeAmount = amount != null ? amount : BigDecimal.ZERO;
+        return escapeHtml(currency) + " " + safeAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     public String bookingCancellationTemplate(
@@ -579,6 +643,36 @@ public class EmailTemplateService {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#x27;");
+    }
+
+    public String promotionAnnouncementTemplate(String promoCode, Object discountType, java.math.BigDecimal discountValue, String hotelName, String longImageUrl, java.time.LocalDate validTo) {
+        String escHotel = escapeHtml(hotelName);
+        String escCode = escapeHtml(promoCode);
+        String value = discountValue == null ? "" : discountValue.toPlainString();
+
+        String discountText = "";
+        if (discountType != null && discountType.toString().equalsIgnoreCase("PERCENTAGE")) {
+            discountText = value + "% off";
+        } else if (discountType != null) {
+            discountText = "$" + value + " off";
+        }
+
+        String dateText = validTo == null ? "" : "Valid until " + escapeHtml(validTo.toString());
+
+        String hero = longImageUrl == null || longImageUrl.isBlank() ? "" : "<div style=\"width:100%;height:200px;background-image:url('" + escapeHtml(longImageUrl) + "');background-size:cover;background-position:center;border-radius:8px;margin-bottom:16px;\"></div>";
+
+        return """
+<div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:20px; background:#f4f6f8; color:#111827;">
+  <div style="max-width:700px;margin:auto;background:#0b1220;color:#fff;padding:20px;border-radius:12px;overflow:hidden;">
+    %s
+    <div style="background:linear-gradient(180deg, rgba(0,0,0,0.35), rgba(0,0,0,0.55)); padding:18px; border-radius:8px;">
+      <h2 style="margin:0 0 8px; font-size:20px;">%s</h2>
+      <p style="margin:0 0 12px; font-size:16px; color:#e6eef0;">Use <strong style=\"background:#111827;padding:4px 8px;border-radius:6px;\">%s</strong> to get <strong>%s</strong> at <strong>%s</strong></p>
+      <p style="font-size:13px; color:#cbd5db; margin:0;">%s</p>
+    </div>
+  </div>
+</div>
+""".formatted(hero, escHotel + " • Special Offer", escCode, discountText, escHotel, dateText);
     }
 
 }

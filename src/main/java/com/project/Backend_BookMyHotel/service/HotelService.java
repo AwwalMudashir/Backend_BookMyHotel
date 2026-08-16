@@ -45,6 +45,7 @@ public class HotelService {
         hotel.setDescription(request.getDescription());
         hotel.setStarRating(request.getStarRating());
         hotel.setLogoUrl(request.getLogoUrl());
+        hotel.setLongImage(request.getLongImage());
 
         Hotel savedHotel = hotelRepo.save(hotel);
         return new ResponseEntity<>(mapToHotelDetailDto(savedHotel),HttpStatus.OK);
@@ -59,6 +60,7 @@ public class HotelService {
         hotel.setDescription(request.getDescription());
         hotel.setStarRating(request.getStarRating());
         hotel.setLogoUrl(request.getLogoUrl());
+        hotel.setLongImage(request.getLongImage());
 
         Hotel updatedHotel = hotelRepo.save(hotel);
         return new ResponseEntity<>(mapToHotelDetailDto(updatedHotel),HttpStatus.OK);
@@ -82,6 +84,7 @@ public class HotelService {
         dto.setDescription(hotel.getDescription());
         dto.setStarRating(hotel.getStarRating());
         dto.setLogoUrl(hotel.getLogoUrl());
+        dto.setLongImage(hotel.getLongImage());
 
         if (hotel.getBranches() != null) {
             dto.setBranches(hotel.getBranches().stream().map(branch -> {

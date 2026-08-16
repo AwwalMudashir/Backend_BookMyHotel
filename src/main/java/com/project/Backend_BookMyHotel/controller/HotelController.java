@@ -42,7 +42,7 @@ public class HotelController {
     }
 
     @PostMapping("/create")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> createHotel(@RequestBody HotelRequestDto request){
         return hotelService.createHotel(request);
     }

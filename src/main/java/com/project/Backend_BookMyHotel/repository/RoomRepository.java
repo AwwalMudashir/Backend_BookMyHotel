@@ -12,6 +12,8 @@ import java.util.Optional;
 public interface RoomRepository extends JpaRepository<Room, Long>, JpaSpecificationExecutor<Room> {
     List<Room> findByBranchId(Long branchId);
 
+    List<Room> findByBranchIdAndActiveTrue(Long branchId);
+
     Optional<Room> findByRoomType(String roomType);
 
 

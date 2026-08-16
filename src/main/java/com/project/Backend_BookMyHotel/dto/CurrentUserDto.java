@@ -26,4 +26,5 @@ public class CurrentUserDto {
     private List<BookingDto> bookings;
     private List<Review> reviews;
     private Integer ecoPoints;
+    private Boolean emailNotifications;
 }

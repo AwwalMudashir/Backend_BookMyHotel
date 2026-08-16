@@ -1,8 +1,10 @@
 package com.project.Backend_BookMyHotel.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
@@ -21,6 +23,8 @@ public class RoomPriceResponse {
     private BigDecimal totalPrice;
     private String currency;
     private String targetCurrency;
+    @JsonProperty("isAvailable")
+    @Getter(onMethod_ = @JsonProperty("isAvailable"))
     private boolean isAvailable; // true only if EVERY night in range is available
     private List<NightlyPriceBreakdown> breakdown;
 
@@ -31,6 +35,8 @@ public class RoomPriceResponse {
     public static class NightlyPriceBreakdown {
         private LocalDate date;
         private BigDecimal price;
+        @JsonProperty("isAvailable")
+        @Getter(onMethod_ = @JsonProperty("isAvailable"))
         private boolean isAvailable;
     }
 }

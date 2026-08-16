@@ -75,6 +75,10 @@ public class RoomSpecification {
             Join<Room, Branch> branchJoin = root.join("branch", JoinType.INNER);
             Join<Branch, Hotel> hotelJoin = branchJoin.join("hotel", JoinType.INNER);
 
+            // Soft-deleted rooms remain in PostgreSQL for historical bookings and analytics,
+            // but must never appear in public room discovery.
+            predicates.add(cb.isTrue(root.get("active")));
+
             // 2. City & Country Filters
             if (city != null && !city.trim().isEmpty()) {
                 predicates.add(cb.equal(lowerText(cb, branchJoin.get("city")), city.toLowerCase().trim()));

@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -16,4 +17,8 @@ public class RoomRequestDto {
     private Long roomTypeId;
     private Map<String, Object> amenities;
     private Set<RoomTag> tags;
+    // Optional image URLs provided by admin (external images). These are appended to the room's image gallery
+    private List<String> imageUrls;
+    // Optional per-room currency (ISO-4217). If provided, persisted; otherwise branch currency is used/shown.
+    private String currency;
 }

@@ -61,6 +61,16 @@ public class Booking {
     @Column(name = "eco_points_earned")
     private Integer ecoPointsEarned = 0;
 
+    // Snapshot the points spent and the resulting discount so payment, receipts, cancellation,
+    // and historical booking views never need to recalculate against newer exchange rates.
+    @Builder.Default
+    @Column(name = "eco_points_redeemed", nullable = false)
+    private Integer ecoPointsRedeemed = 0;
+
+    @Builder.Default
+    @Column(name = "eco_points_discount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal ecoPointsDiscount = BigDecimal.ZERO;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

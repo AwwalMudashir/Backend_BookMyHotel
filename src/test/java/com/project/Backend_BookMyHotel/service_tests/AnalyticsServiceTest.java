@@ -10,6 +10,7 @@ import com.project.Backend_BookMyHotel.repository.BookingRepository;
 import com.project.Backend_BookMyHotel.repository.HotelRepository;
 import com.project.Backend_BookMyHotel.repository.ReviewRepository;
 import com.project.Backend_BookMyHotel.service.AnalyticsService;
+import com.project.Backend_BookMyHotel.service.ExchangeRateService;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,9 @@ public class AnalyticsServiceTest {
 
     @Mock
     private HotelRepository hotelRepository;
+
+    @Mock
+    private ExchangeRateService exchangeRateService;
 
     @InjectMocks
     private AnalyticsService analyticsService;
@@ -67,6 +71,12 @@ public class AnalyticsServiceTest {
                 .status(BookingStatus.CONFIRMED)
                 .totalPrice(BigDecimal.valueOf(300))
                 .build();
+
+        // Keep these unit tests deterministic: treat the sample GBP amount as an equivalent
+        // USD amount while testing analytics arithmetic, not the external exchange-rate logic.
+        Mockito.lenient().when(exchangeRateService.convert(
+                        Mockito.any(BigDecimal.class), Mockito.eq("GBP"), Mockito.eq("USD")))
+                .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test

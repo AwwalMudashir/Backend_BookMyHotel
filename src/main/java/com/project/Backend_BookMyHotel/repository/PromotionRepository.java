@@ -12,4 +12,6 @@ public interface PromotionRepository extends JpaRepository<Promotion,Long> {
     Optional<Promotion> findByCodeIgnoreCase(String code);
 
     List<Promotion> findByHotelIdAndActiveTrue(Long hotelId);
+
+    List<Promotion> findByActiveTrue();
 }
