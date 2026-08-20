@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -131,8 +132,19 @@ class SearchServiceIntegrationTest {
                 null
         );
 
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         Page<?> page = (Page<?>) response.getBody();
+
+        System.out.println("[TC-I01 SEARCH AND DATABASE BOOKING OVERLAP]");
+        System.out.println("PostgreSQL container running: " + postgres.isRunning());
+        System.out.println("Redis container running: " + redis.isRunning());
+        System.out.println("Persisted confirmed booking: room=" + room.getId()
+                + " | 2026-07-10 to 2026-07-14");
+        System.out.println("Requested search: Lagos, NG | 2026-07-12 to 2026-07-15");
+        System.out.println("Expected HTTP result: 2xx | Actual: " + response.getStatusCode());
+        System.out.println("Expected available rooms: 0 | Actual: " + page.getContent().size());
+        System.out.println("Result: the persisted overlapping booking correctly excluded the room from search");
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(page.getContent()).isEmpty();
     }
 
@@ -260,6 +272,35 @@ class SearchServiceIntegrationTest {
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         Page<?> page = (Page<?>) response.getBody();
         assertThat(page.getContent()).hasSize(1);
+    }
+
+    @Test
+    void searchFiltersByOneOrSeveralHotelIds() {
+        Hotel fourSeasons = createHotel("Four Seasons");
+        Hotel hilton = createHotel("Hilton");
+        createRoom(createBranch(fourSeasons, "Dubai", "AE", "AED"), "Deluxe", new BigDecimal("900.00"));
+        createRoom(createBranch(hilton, "Dubai", "AE", "AED"), "Suite", new BigDecimal("1100.00"));
+
+        ResponseEntity<?> oneHotelResponse = searchService.searchAvailableRooms(
+                null, null, "Dubai", "AE",
+                null, null, null,
+                null, null, Set.of(fourSeasons.getId()), null,
+                0, 10, null
+        );
+        ResponseEntity<?> bothHotelsResponse = searchService.searchAvailableRooms(
+                null, null, "Dubai", "AE",
+                null, null, null,
+                null, null, Set.of(fourSeasons.getId(), hilton.getId()), null,
+                0, 10, null
+        );
+
+        Page<?> oneHotelPage = (Page<?>) oneHotelResponse.getBody();
+        Page<?> bothHotelsPage = (Page<?>) bothHotelsResponse.getBody();
+
+        assertThat(oneHotelPage.getContent()).hasSize(1);
+        assertThat(((RoomSearchResult) oneHotelPage.getContent().get(0)).getHotelName())
+                .isEqualTo("Four Seasons");
+        assertThat(bothHotelsPage.getContent()).hasSize(2);
     }
 
     @Test

@@ -2,7 +2,6 @@ package com.project.Backend_BookMyHotel.controller;
 
 import com.project.Backend_BookMyHotel.dto.BranchRequestDto;
 import com.project.Backend_BookMyHotel.dto.BranchReviewsResponse;
-import com.project.Backend_BookMyHotel.dto.HotelRequestDto;
 import com.project.Backend_BookMyHotel.dto.RoomResponse;
 import com.project.Backend_BookMyHotel.dto.ServiceResponse;
 import com.project.Backend_BookMyHotel.service.BranchService;
@@ -26,19 +25,18 @@ public class BranchController {
 
     @GetMapping("/all")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> getBranches(){
+    public ResponseEntity<?> getBranches(){
         return branchService.getBranches();
     }
 
     @PostMapping("/byHotel/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> getBranchesByHotel(@PathVariable Long id){
+    public ResponseEntity<?> getBranchesByHotel(@PathVariable Long id){
         return branchService.getBranchesByHotel(id);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> getBranchById(@PathVariable Long id){
+    public ResponseEntity<?> getBranchById(@PathVariable Long id){
         return branchService.getBranchById(id);
     }
 
@@ -67,19 +65,19 @@ public class BranchController {
 
     @PostMapping("/create")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> createBranch(@RequestBody BranchRequestDto request){
+    public ResponseEntity<?> createBranch(@RequestBody BranchRequestDto request){
         return branchService.createBranch(request.getHotelId(), request);
     }
 
     @PutMapping("/update/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> updateBranch(@PathVariable Long id, @RequestBody BranchRequestDto request){
+    public ResponseEntity<?> updateBranch(@PathVariable Long id, @RequestBody BranchRequestDto request){
         return branchService.updateBranch(null, id, request);
     }
 
     @DeleteMapping("/delete/{id}")
     @PreAuthorize("hasAuthority('ADMIN')")
-    private ResponseEntity<?> deleteBranch(@PathVariable Long id){
+    public ResponseEntity<?> deleteBranch(@PathVariable Long id){
         return branchService.deleteBranch(null, id);
     }
 

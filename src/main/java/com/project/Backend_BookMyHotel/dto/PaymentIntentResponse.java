@@ -20,4 +20,8 @@ public class PaymentIntentResponse {
     private String clientSecret;
     private BigDecimal amount;
     private String currency;
+    // Lets the frontend distinguish a payable intent from a payment which Stripe has
+    // already completed (for example when its webhook was missed locally).
+    private PaymentStatus status;
+    private String stripeStatus;
 }

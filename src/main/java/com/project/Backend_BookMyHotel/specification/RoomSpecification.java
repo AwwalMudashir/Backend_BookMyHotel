@@ -40,7 +40,8 @@ public class RoomSpecification {
             Integer maxOccupancy,
             Long hotelId
     ) {
-        return buildSearchSpec(checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelId, null, null);
+        Set<Long> hotelIds = hotelId == null ? Set.of() : Set.of(hotelId);
+        return buildSearchSpec(checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelIds, null, null);
     }
 
     // priceRangesByCurrency: when non-empty, price filtering is done per branch.currency using
@@ -59,7 +60,7 @@ public class RoomSpecification {
             BigDecimal maxPrice,
             String roomType,
             Integer maxOccupancy,
-            Long hotelId,
+            Set<Long> hotelIds,
             Map<String, CurrencyPriceRange> priceRangesByCurrency,
             Set<RoomTag> tags
     ) {
@@ -119,8 +120,8 @@ public class RoomSpecification {
             if (maxOccupancy != null) {
                 predicates.add(cb.greaterThanOrEqualTo(root.get("maxOccupancy"), maxOccupancy));
             }
-            if (hotelId != null) {
-                predicates.add(cb.equal(hotelJoin.get("id"), hotelId));
+            if (hotelIds != null && !hotelIds.isEmpty()) {
+                predicates.add(hotelJoin.get("id").in(hotelIds));
             }
 
             // 5. Room Tag Filters — a separate join per requested tag, each constrained to that

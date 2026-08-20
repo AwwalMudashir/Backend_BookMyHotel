@@ -73,7 +73,7 @@ class BookingOverlapUnitTest {
 
         User customer = new User();
         customer.setId(5L);
-        customer.setEmail("guest@example.com");
+        customer.setEmail("awwalmudashir@gmail.com");
         customer.setRole(Role.CUSTOMER);
 
         Authentication authentication = Mockito.mock(Authentication.class);
@@ -118,6 +118,14 @@ class BookingOverlapUnitTest {
                 .thenReturn(new ArrayList<>(List.of(existingBooking)));
 
         ResponseEntity<?> secondAttempt = bookingService.createBooking(authentication, request);
+
+        System.out.println("[TC-U02 BOOKING OVERLAP]");
+        System.out.println("First booking expected/actual status: 201 CREATED / "
+                + firstAttempt.getStatusCode());
+        System.out.println("Overlapping booking expected/actual status: 400 BAD_REQUEST / "
+                + secondAttempt.getStatusCode());
+        System.out.println("Actual rejection message: " + secondAttempt.getBody());
+        System.out.println("Result: the same room cannot be booked twice for overlapping dates");
 
         assertEquals(HttpStatus.BAD_REQUEST, secondAttempt.getStatusCode());
         assertTrue(((String) secondAttempt.getBody()).contains("not available"));

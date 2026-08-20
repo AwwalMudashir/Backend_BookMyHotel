@@ -16,6 +16,10 @@ import java.util.Optional;
 public interface HotelRepository extends JpaRepository<Hotel,Long> {
     Optional<Hotel> findByName(String name);
 
+    Optional<Hotel> findByNameIgnoreCase(String name);
+
+    Optional<Hotel> findByPublicId(String publicId);
+
     Page<HotelSummary> findBy(Pageable pageable);
 
     @Query("SELECT h FROM Hotel h JOIN h.branches b WHERE b.id = :branchId")

@@ -56,7 +56,7 @@ public class RoomSearchCacheService {
                     "(#filterCurrency != null ? #filterCurrency : '') + ':' + " +
                     "(#roomType != null ? #roomType : '') + ':' + " +
                     "(#maxOccupancy != null ? #maxOccupancy.toString() : '') + ':' + " +
-                    "(#hotelId != null ? #hotelId.toString() : '') + ':' + " +
+                    "(#hotelIds != null && !#hotelIds.isEmpty() ? #hotelIds.toString() : '') + ':' + " +
                     // Set iteration order is only stable within a single running JVM, not across
                     // restarts — worst case a restart splits what should be one cache entry into
                     // two, which self-heals via the 5-minute TTL. Not worth a sorted-key dance for.
@@ -73,7 +73,7 @@ public class RoomSearchCacheService {
             String filterCurrency,
             String roomType,
             Integer maxOccupancy,
-            Long hotelId,
+            Set<Long> hotelIds,
             Set<RoomTag> tags,
             int page,
             int size,
@@ -85,7 +85,7 @@ public class RoomSearchCacheService {
                 buildPriceRangesByCurrency(city, country, minPrice, maxPrice, filterCurrency);
 
         Specification<Room> spec = RoomSpecification.buildSearchSpec(
-                checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelId,
+                checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelIds,
                 priceRangesByCurrency, tags
         );
 

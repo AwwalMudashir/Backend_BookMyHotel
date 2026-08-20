@@ -34,8 +34,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 
 @ExtendWith(MockitoExtension.class)
@@ -85,8 +83,6 @@ public class PaymentServiceTest {
     void createPaymentIntent_Success_CreatesStripeIntentAndPersistsPendingPayment() {
         Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
         Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED)).thenReturn(Optional.empty());
-        Mockito.when(paymentRepository.findByBookingId(50L)).thenReturn(new ArrayList<>());
-
         PaymentIntent fakeIntent = Mockito.mock(PaymentIntent.class);
         Mockito.when(fakeIntent.getId()).thenReturn("pi_123");
         Mockito.when(fakeIntent.getClientSecret()).thenReturn("pi_123_secret_abc");
@@ -140,8 +136,10 @@ public class PaymentServiceTest {
     }
 
     @Test
-    void createPaymentIntent_WhenAlreadyPaid_ReturnsBadRequest() {
+    void createPaymentIntent_WhenAlreadyPaid_ReturnsSucceededResponseWithoutRemountingStripe() {
         Payment succeeded = new Payment();
+        succeeded.setBooking(booking);
+        succeeded.setStripePaymentId("pi_paid");
         succeeded.setStatus(PaymentStatus.SUCCEEDED);
         Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
         Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
@@ -149,7 +147,94 @@ public class PaymentServiceTest {
 
         ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 1L, Role.CUSTOMER);
 
-        Assertions.assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        PaymentIntentResponse body = (PaymentIntentResponse) response.getBody();
+        Assertions.assertEquals(PaymentStatus.SUCCEEDED, body.getStatus());
+        Assertions.assertNull(body.getClientSecret());
+    }
+
+    @Test
+    void createPaymentIntent_WhenStripeAlreadySucceeded_RecoversMissedWebhook() {
+        Payment pending = new Payment();
+        pending.setId(500L);
+        pending.setBooking(booking);
+        pending.setStripePaymentId("pi_completed");
+        pending.setStatus(PaymentStatus.PENDING);
+
+        Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
+                .thenReturn(Optional.empty());
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.PENDING))
+                .thenReturn(Optional.of(pending));
+
+        PaymentIntent completedIntent = Mockito.mock(PaymentIntent.class);
+        Mockito.when(completedIntent.getId()).thenReturn("pi_completed");
+        Mockito.when(completedIntent.getStatus()).thenReturn("succeeded");
+
+        try (MockedStatic<PaymentIntent> stripeStatic = Mockito.mockStatic(PaymentIntent.class)) {
+            stripeStatic.when(() -> PaymentIntent.retrieve("pi_completed")).thenReturn(completedIntent);
+
+            ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 1L, Role.CUSTOMER);
+
+            Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+            PaymentIntentResponse body = (PaymentIntentResponse) response.getBody();
+            Assertions.assertEquals(PaymentStatus.SUCCEEDED, body.getStatus());
+            Assertions.assertEquals("succeeded", body.getStripeStatus());
+            Assertions.assertNull(body.getClientSecret());
+            stripeStatic.verify(
+                    () -> PaymentIntent.create(Mockito.any(PaymentIntentCreateParams.class), Mockito.any(RequestOptions.class)),
+                    Mockito.never());
+        }
+
+        Assertions.assertEquals(PaymentStatus.SUCCEEDED, pending.getStatus());
+        Mockito.verify(paymentRepository).save(pending);
+        Mockito.verify(bookingService).confirmBooking(50L);
+    }
+
+    @Test
+    void createPaymentIntent_WhenOldIntentCanceled_UsesNewRetryIdempotencyKey() {
+        Payment pending = new Payment();
+        pending.setId(500L);
+        pending.setBooking(booking);
+        pending.setStripePaymentId("pi_canceled");
+        pending.setStatus(PaymentStatus.PENDING);
+
+        Mockito.when(bookingRepository.findByIdForUpdate(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
+                .thenReturn(Optional.empty());
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.PENDING))
+                .thenReturn(Optional.of(pending));
+
+        PaymentIntent canceledIntent = Mockito.mock(PaymentIntent.class);
+        Mockito.when(canceledIntent.getId()).thenReturn("pi_canceled");
+        Mockito.when(canceledIntent.getStatus()).thenReturn("canceled");
+
+        PaymentIntent replacementIntent = Mockito.mock(PaymentIntent.class);
+        Mockito.when(replacementIntent.getId()).thenReturn("pi_replacement");
+        Mockito.when(replacementIntent.getStatus()).thenReturn("requires_payment_method");
+        Mockito.when(replacementIntent.getClientSecret()).thenReturn("pi_replacement_secret");
+
+        try (MockedStatic<PaymentIntent> stripeStatic = Mockito.mockStatic(PaymentIntent.class)) {
+            stripeStatic.when(() -> PaymentIntent.retrieve("pi_canceled")).thenReturn(canceledIntent);
+            stripeStatic.when(() -> PaymentIntent.create(
+                            Mockito.any(PaymentIntentCreateParams.class), Mockito.any(RequestOptions.class)))
+                    .thenReturn(replacementIntent);
+
+            ResponseEntity<?> response = paymentService.createPaymentIntent(50L, 1L, Role.CUSTOMER);
+
+            Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+            PaymentIntentResponse body = (PaymentIntentResponse) response.getBody();
+            Assertions.assertEquals("pi_replacement_secret", body.getClientSecret());
+
+            ArgumentCaptor<RequestOptions> optionsCaptor = ArgumentCaptor.forClass(RequestOptions.class);
+            stripeStatic.verify(() -> PaymentIntent.create(
+                    Mockito.any(PaymentIntentCreateParams.class), optionsCaptor.capture()));
+            Assertions.assertEquals("booking-intent-retry-50-pi_canceled",
+                    optionsCaptor.getValue().getIdempotencyKey());
+        }
+
+        Assertions.assertEquals("pi_replacement", pending.getStripePaymentId());
+        Mockito.verify(paymentRepository).save(pending);
     }
 
     @Test
@@ -316,5 +401,38 @@ public class PaymentServiceTest {
         ResponseEntity<?> response = paymentService.getPaymentStatus(50L, 1L, Role.CUSTOMER);
 
         Assertions.assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+    }
+
+    @Test
+    void getPaymentStatus_WhenWebhookWasMissed_ReconcilesWithStripe() {
+        Payment pending = new Payment();
+        pending.setId(500L);
+        pending.setBooking(booking);
+        pending.setStripePaymentId("pi_completed");
+        pending.setStatus(PaymentStatus.PENDING);
+        pending.setAmount(BigDecimal.valueOf(300));
+        pending.setCurrency("GBP");
+
+        Mockito.when(bookingRepository.findById(50L)).thenReturn(Optional.of(booking));
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.SUCCEEDED))
+                .thenReturn(Optional.empty());
+        Mockito.when(paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(50L, PaymentStatus.PENDING))
+                .thenReturn(Optional.of(pending));
+
+        PaymentIntent completedIntent = Mockito.mock(PaymentIntent.class);
+        Mockito.when(completedIntent.getId()).thenReturn("pi_completed");
+        Mockito.when(completedIntent.getStatus()).thenReturn("succeeded");
+
+        try (MockedStatic<PaymentIntent> stripeStatic = Mockito.mockStatic(PaymentIntent.class)) {
+            stripeStatic.when(() -> PaymentIntent.retrieve("pi_completed")).thenReturn(completedIntent);
+
+            ResponseEntity<?> response = paymentService.getPaymentStatus(50L, 1L, Role.CUSTOMER);
+
+            PaymentStatusResponse body = (PaymentStatusResponse) response.getBody();
+            Assertions.assertEquals(PaymentStatus.SUCCEEDED, body.getStatus());
+        }
+
+        Mockito.verify(paymentRepository).save(pending);
+        Mockito.verify(bookingService).confirmBooking(50L);
     }
 }

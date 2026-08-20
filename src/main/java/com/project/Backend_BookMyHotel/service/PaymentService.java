@@ -72,8 +72,18 @@ public class PaymentService {
             return ResponseEntity.badRequest().body("You are not authorized to pay for this booking.");
         }
 
-        if (paymentRepository.findFirstByBookingIdAndStatusOrderByIdDesc(bookingId, PaymentStatus.SUCCEEDED).isPresent()) {
-            return ResponseEntity.badRequest().body("This booking has already been paid for.");
+        Optional<Payment> succeededOpt = paymentRepository
+                .findFirstByBookingIdAndStatusOrderByIdDesc(bookingId, PaymentStatus.SUCCEEDED);
+        if (succeededOpt.isPresent()) {
+            Payment succeeded = succeededOpt.get();
+            return ResponseEntity.ok(toIntentResponse(
+                    succeeded,
+                    booking.getTotalPrice(),
+                    booking.getRoom().getBranch().getCurrency(),
+                    null,
+                    PaymentStatus.SUCCEEDED,
+                    "succeeded"
+            ));
         }
 
         if (booking.getStatus() != BookingStatus.PENDING) {
@@ -98,39 +108,49 @@ public class PaymentService {
             try {
                 log.info("Found existing pending Payment ({}) for booking {}. Checking Stripe status.", pending.getId(), bookingId);
                 PaymentIntent existingIntent = PaymentIntent.retrieve(pending.getStripePaymentId());
+                String stripeStatus = existingIntent.getStatus();
+
+                if ("succeeded".equals(stripeStatus)) {
+                    log.info("Stripe already completed PaymentIntent {}. Reconciling the missed webhook for booking {}.",
+                            existingIntent.getId(), bookingId);
+                    completeSuccessfulPayment(pending);
+                    return ResponseEntity.ok(toIntentResponse(
+                            pending, amount, currency, existingIntent, PaymentStatus.SUCCEEDED, stripeStatus));
+                }
+
+                if (isAwaitingSettlement(stripeStatus)) {
+                    log.info("PaymentIntent {} is still {}. Sending the customer to payment status polling.",
+                            existingIntent.getId(), stripeStatus);
+                    return ResponseEntity.ok(toIntentResponse(
+                            pending, amount, currency, existingIntent, PaymentStatus.PENDING, stripeStatus));
+                }
+
                 if (isReusable(existingIntent.getStatus())) {
                     log.info("Reusing existing Stripe PaymentIntent {} with status {} for booking {}.", existingIntent.getId(), existingIntent.getStatus(), bookingId);
-                    return ResponseEntity.ok(PaymentIntentResponse.builder()
-                            .bookingId(bookingId)
-                            .paymentId(pending.getPaymentId())
-                            .paymentIntentId(existingIntent.getId())
-                            .clientSecret(existingIntent.getClientSecret())
-                            .amount(amount)
-                            .currency(currency)
-                            .build());
+                    return ResponseEntity.ok(toIntentResponse(
+                            pending, amount, currency, existingIntent, PaymentStatus.PENDING, stripeStatus));
                 }
                 log.info("Existing Stripe PaymentIntent {} status {} is not reusable; creating a fresh one for booking {}.",
                         existingIntent.getId(), existingIntent.getStatus(), bookingId);
             } catch (StripeException e) {
-                log.warn("Could not retrieve existing PaymentIntent {} for booking {}, creating a new one: {}",
+                log.error("Could not retrieve existing PaymentIntent {} for booking {}: {}",
                         pending.getStripePaymentId(), bookingId, e.getMessage());
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body("Could not verify the previous payment attempt. Please try again in a moment.");
             }
 
             try {
-                PaymentIntent intent = createStripeIntent(bookingId, booking, amount, currency);
+                // A completed/cancelled intent cannot be reused. The retry key must differ from
+                // the original key or Stripe idempotency will return that same unusable intent.
+                String retryKey = "booking-intent-retry-" + bookingId + "-" + pending.getStripePaymentId();
+                PaymentIntent intent = createStripeIntent(bookingId, booking, amount, currency, retryKey);
                 pending.setStripePaymentId(intent.getId());
                 pending.setAmount(amount);
                 pending.setCurrency(currency);
                 paymentRepository.save(pending);
 
-                return ResponseEntity.ok(PaymentIntentResponse.builder()
-                        .bookingId(bookingId)
-                        .paymentId(pending.getPaymentId())
-                        .paymentIntentId(intent.getId())
-                        .clientSecret(intent.getClientSecret())
-                        .amount(amount)
-                        .currency(currency)
-                        .build());
+                return ResponseEntity.ok(toIntentResponse(
+                        pending, amount, currency, intent, PaymentStatus.PENDING, intent.getStatus()));
             } catch (StripeException e) {
                 log.error("Stripe error creating PaymentIntent for booking {}: {}", bookingId, e.getMessage(), e);
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body("Could not start payment: " + e.getMessage());
@@ -138,7 +158,8 @@ public class PaymentService {
         }
 
         try {
-            PaymentIntent intent = createStripeIntent(bookingId, booking, amount, currency);
+            String initialKey = "booking-intent-" + bookingId + "-" + booking.getReference();
+            PaymentIntent intent = createStripeIntent(bookingId, booking, amount, currency, initialKey);
 
             Payment payment = new Payment();
             payment.setBooking(booking);
@@ -155,6 +176,8 @@ public class PaymentService {
                     .clientSecret(intent.getClientSecret())
                     .amount(amount)
                     .currency(currency)
+                    .status(PaymentStatus.PENDING)
+                    .stripeStatus(intent.getStatus())
                     .build());
         } catch (StripeException e) {
             log.error("Stripe error creating PaymentIntent for booking {}: {}", bookingId, e.getMessage(), e);
@@ -162,7 +185,8 @@ public class PaymentService {
         }
     }
 
-    private PaymentIntent createStripeIntent(Long bookingId, Booking booking, BigDecimal amount, String currency) throws StripeException {
+    private PaymentIntent createStripeIntent(Long bookingId, Booking booking, BigDecimal amount, String currency,
+                                             String idempotencyKey) throws StripeException {
         PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
                 .setAmount(toSmallestUnit(amount, currency))
                 .setCurrency(currency.toLowerCase(Locale.ROOT))
@@ -174,10 +198,6 @@ public class PaymentService {
                                 .build())
                 .build();
 
-        // Use an idempotency key per booking to avoid duplicate PaymentIntents from
-        // double-calls (e.g. React StrictMode in development or accidental double-clicks).
-        // This key is deterministic for the booking so retries return the same intent.
-        String idempotencyKey = "booking-intent-" + bookingId + "-" + booking.getReference();
         RequestOptions requestOptions = RequestOptions.builder().setIdempotencyKey(idempotencyKey).build();
 
         return PaymentIntent.create(params, requestOptions);
@@ -190,6 +210,26 @@ public class PaymentService {
         return "requires_payment_method".equals(stripeStatus)
                 || "requires_confirmation".equals(stripeStatus)
                 || "requires_action".equals(stripeStatus);
+    }
+
+    private boolean isAwaitingSettlement(String stripeStatus) {
+        return "processing".equals(stripeStatus) || "requires_capture".equals(stripeStatus);
+    }
+
+    private PaymentIntentResponse toIntentResponse(Payment payment, BigDecimal amount, String currency,
+                                                   PaymentIntent intent, PaymentStatus status,
+                                                   String stripeStatus) {
+        boolean payable = intent != null && isReusable(stripeStatus);
+        return PaymentIntentResponse.builder()
+                .bookingId(payment.getBooking().getId())
+                .paymentId(payment.getPaymentId())
+                .paymentIntentId(intent != null ? intent.getId() : payment.getStripePaymentId())
+                .clientSecret(payable ? intent.getClientSecret() : null)
+                .amount(amount)
+                .currency(currency)
+                .status(status)
+                .stripeStatus(stripeStatus)
+                .build();
     }
 
     // Entry point for the webhook controller.
@@ -398,13 +438,24 @@ public class PaymentService {
             return; // Stripe can deliver the same webhook more than once — already handled.
         }
 
+        completeSuccessfulPayment(payment);
+    }
+
+    private void completeSuccessfulPayment(Payment payment) {
+        if (payment.getStatus() == PaymentStatus.SUCCEEDED) {
+            return;
+        }
+
         payment.setStatus(PaymentStatus.SUCCEEDED);
         payment.setPaidAt(LocalDateTime.now());
         paymentRepository.save(payment);
-        log.info("Payment row id={} marked SUCCEEDED (PaymentIntent={})", payment.getId(), paymentIntentId);
+        log.info("Payment row id={} marked SUCCEEDED (PaymentIntent={})",
+                payment.getId(), payment.getStripePaymentId());
 
-        bookingService.confirmBooking(payment.getBooking().getId());
-        log.info("Triggered booking confirmation for booking id={}", payment.getBooking().getId());
+        if (payment.getBooking().getStatus() == BookingStatus.PENDING) {
+            bookingService.confirmBooking(payment.getBooking().getId());
+            log.info("Triggered booking confirmation for booking id={}", payment.getBooking().getId());
+        }
     }
 
     @Transactional
@@ -520,6 +571,7 @@ public class PaymentService {
         }
     }
 
+    @Transactional
     public ResponseEntity<?> getPaymentStatus(Long bookingId, Long userId, Role userRole) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new NoSuchElementException("Booking not found with ID: " + bookingId));
@@ -538,7 +590,7 @@ public class PaymentService {
         if (paymentOpt.isEmpty()) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("No payment found for booking " + bookingId);
         }
-        Payment payment = paymentOpt.get();
+        Payment payment = reconcilePendingPayment(paymentOpt.get());
 
         return ResponseEntity.ok(PaymentStatusResponse.builder()
                 .bookingId(bookingId)
@@ -553,6 +605,7 @@ public class PaymentService {
     }
 
     // Secure endpoint that uses paymentId instead of database IDs
+    @Transactional
     public ResponseEntity<?> getPaymentStatusByPaymentId(String paymentId, Long userId, Role userRole) {
         Optional<Payment> paymentOpt = paymentRepository.findByPaymentId(paymentId);
         if (paymentOpt.isEmpty()) {
@@ -566,6 +619,8 @@ public class PaymentService {
             return ResponseEntity.badRequest().body("You are not authorized to view this payment.");
         }
 
+        payment = reconcilePendingPayment(payment);
+
         return ResponseEntity.ok(PaymentStatusResponse.builder()
                 .bookingId(booking.getId())
                 .paymentId(payment.getPaymentId())
@@ -576,6 +631,28 @@ public class PaymentService {
                 .paidAt(payment.getPaidAt())
                 .refundId(payment.getRefundId())
                 .build());
+    }
+
+    private Payment reconcilePendingPayment(Payment payment) {
+        if (payment.getStatus() != PaymentStatus.PENDING || payment.getStripePaymentId() == null) {
+            return payment;
+        }
+
+        try {
+            PaymentIntent intent = PaymentIntent.retrieve(payment.getStripePaymentId());
+            if ("succeeded".equals(intent.getStatus())) {
+                log.info("Status check recovered succeeded PaymentIntent {} after a missed webhook.", intent.getId());
+                completeSuccessfulPayment(payment);
+            } else if ("canceled".equals(intent.getStatus())) {
+                payment.setStatus(PaymentStatus.FAILED);
+                paymentRepository.save(payment);
+            }
+        } catch (StripeException e) {
+            // Keep returning the local state so a temporary Stripe outage does not break polling.
+            log.warn("Could not reconcile PaymentIntent {} during status check: {}",
+                    payment.getStripePaymentId(), e.getMessage());
+        }
+        return payment;
     }
 
     private long toSmallestUnit(BigDecimal amount, String currency) {

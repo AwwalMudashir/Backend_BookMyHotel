@@ -193,6 +193,13 @@ public class BookingServiceTest {
         BigDecimal subtotalSum = body.getServices().stream()
                 .map(BookingResponse.AddonServiceResponse::getSubtotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        System.out.println("[TC-U03 BOOKING SERVICES TOTAL]");
+        System.out.println("Expected service subtotal: 125.00 | Actual: " + subtotalSum);
+        System.out.println("Expected booking total: 325.00 | Actual: " + body.getTotalPrice());
+        System.out.println("Expected selected services: 2 | Actual: " + body.getServices().size());
+        System.out.println("Result: service prices are included correctly in the booking total");
+
         Assertions.assertEquals(0, BigDecimal.valueOf(125).compareTo(subtotalSum));
     }
 
@@ -391,6 +398,14 @@ public class BookingServiceTest {
 
         Assertions.assertEquals(HttpStatus.CREATED, response.getStatusCode());
         BookingResponse body = (BookingResponse) response.getBody();
+
+        System.out.println("[TC-U04 ECO-POINT REDEMPTION]");
+        System.out.println("Starting balance: 100 points | Redeemed: " + body.getEcoPointsRedeemed());
+        System.out.println("Expected remaining balance: 50 | Actual: " + customer.getEcoPoints());
+        System.out.println("Expected discount: GBP 4.00 | Actual: GBP " + body.getEcoPointsDiscount());
+        System.out.println("Expected final room total: GBP 296.00 | Actual: GBP " + body.getTotalPrice());
+        System.out.println("Result: eco points reduce both the balance and booking price correctly");
+
         Assertions.assertEquals(0, BigDecimal.valueOf(296).compareTo(body.getTotalPrice()));
         Assertions.assertEquals(50, body.getEcoPointsRedeemed());
         Assertions.assertEquals(0, BigDecimal.valueOf(4).compareTo(body.getEcoPointsDiscount()));

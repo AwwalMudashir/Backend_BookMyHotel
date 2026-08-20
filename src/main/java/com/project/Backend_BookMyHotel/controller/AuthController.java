@@ -37,11 +37,13 @@ public class AuthController {
     }
 
     @PostMapping("/register/hotel-manager")
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> addHotelmanager(@RequestBody OnboardHotelManager onboardDto){
         return userService.addHotelManager(onboardDto);
     }
 
     @PostMapping("/register/admin")
+    @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> createAdmin(@RequestBody AdminDto onboardDto){
         return userService.createAdmin(onboardDto);
     }

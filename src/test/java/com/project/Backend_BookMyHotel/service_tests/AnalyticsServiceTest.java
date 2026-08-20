@@ -131,28 +131,29 @@ public class AnalyticsServiceTest {
     }
 
     @Test
-    void getAverageDailyRate_IsRevenueDividedByRoomNights() {
+    void tcU05_averageDailyRateCalculatesValueAndHandlesZeroNights() {
         LocalDate start = LocalDate.of(2026, 1, 1);
         LocalDate end = LocalDate.of(2026, 1, 31);
         Mockito.when(bookingRepository.findByHotelAndStatusAndCheckInBetween(1000L, BookingStatus.CONFIRMED, start, end))
                 .thenReturn(List.of(confirmedBooking));
 
-        BigDecimal adr = analyticsService.getAverageDailyRate(1000L, start, end);
+        BigDecimal populatedRangeAdr = analyticsService.getAverageDailyRate(1000L, start, end);
 
-        // 300 revenue / 3 nights = 100.00
-        Assertions.assertEquals(0, BigDecimal.valueOf(100).compareTo(adr));
-    }
-
-    @Test
-    void getAverageDailyRate_WhenNoRoomNights_ReturnsZeroInsteadOfDividingByZero() {
-        LocalDate start = LocalDate.of(2026, 1, 1);
-        LocalDate end = LocalDate.of(2026, 1, 31);
         Mockito.when(bookingRepository.findByHotelAndStatusAndCheckInBetween(1000L, BookingStatus.CONFIRMED, start, end))
                 .thenReturn(List.of());
 
-        BigDecimal adr = analyticsService.getAverageDailyRate(1000L, start, end);
+        BigDecimal emptyRangeAdr = analyticsService.getAverageDailyRate(1000L, start, end);
 
-        Assertions.assertEquals(0, BigDecimal.ZERO.compareTo(adr));
+        System.out.println("[TC-U05 AVERAGE DAILY RATE CALCULATION]");
+        System.out.println("Hotel ID: 1000 | Date range: 2026-01-01 to 2026-01-31");
+        System.out.println("Scenario 1 revenue/nights: USD 300.00 / 3");
+        System.out.println("Scenario 1 expected ADR: USD 100.00 | Actual: USD " + populatedRangeAdr);
+        System.out.println("Scenario 2 occupied nights: 0");
+        System.out.println("Scenario 2 expected ADR: USD 0.00 | Actual: USD " + emptyRangeAdr.setScale(2));
+        System.out.println("Result: ADR is calculated correctly and zero nights cause no division error");
+
+        Assertions.assertEquals(0, BigDecimal.valueOf(100).compareTo(populatedRangeAdr));
+        Assertions.assertEquals(0, BigDecimal.ZERO.compareTo(emptyRangeAdr));
     }
 
     @Test

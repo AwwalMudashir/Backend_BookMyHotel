@@ -47,6 +47,7 @@ public class BookingController {
     }
 
     @PostMapping("/{bookingId}/cancel")
+    @PreAuthorize("hasAuthority('CUSTOMER')")
     public ResponseEntity<?> cancelBooking(
             @PathVariable Long bookingId,
             Authentication authentication
@@ -56,6 +57,7 @@ public class BookingController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAuthority('CUSTOMER')")
     public Page<BookingResponse> getUserBookings(
             @RequestParam(required = false) BookingStatus status,
             @RequestParam(defaultValue = "0") int page,
@@ -71,6 +73,7 @@ public class BookingController {
     }
 
     @GetMapping("/{bookingId}")
+    @PreAuthorize("hasAuthority('CUSTOMER')")
     public ResponseEntity<?> getBookingById(
             @PathVariable Long bookingId,
             Authentication authentication
@@ -80,6 +83,7 @@ public class BookingController {
     }
 
     @PostMapping("/{bookingId}/services")
+    @PreAuthorize("hasAuthority('CUSTOMER')")
     public ResponseEntity<?> addServices(
             @PathVariable Long bookingId,
             @Valid @RequestBody AddServicesRequest request,
@@ -90,6 +94,7 @@ public class BookingController {
     }
 
     @DeleteMapping("/{bookingId}/services/{serviceId}")
+    @PreAuthorize("hasAuthority('CUSTOMER')")
     public ResponseEntity<?> removeService(
             @PathVariable Long bookingId,
             @PathVariable Long serviceId,

@@ -60,8 +60,22 @@ public class AppConfig {
                 .csrf(custom -> custom.disable())
                 .authorizeHttpRequests(registry -> registry
                         .requestMatchers("/auth/register", "/auth/login","/auth/google","/auth/refresh","/auth/forgot-password","/auth/reset-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/auth/logout","/search/rooms","/payments/webhook","/contact","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        // Public hotel browsing, public room lookups, and active promo listings.
-                        .requestMatchers(HttpMethod.GET, "/hotel/**", "/room/**", "/branch/**", "/branches/**", "/services/branch/**", "/promotions", "/promotions/**", "/promotion", "/promotion/**").permitAll()
+                        // Public browsing data used before a customer signs in.
+                        .requestMatchers(HttpMethod.GET,
+                                "/hotel/**",
+                                "/room/**",
+                                "/branch/**",
+                                "/branches/**",
+                                "/availability/**",
+                                "/services/branch/**",
+                                "/promotions",
+                                "/promotions/**",
+                                "/promotion",
+                                "/promotion/**"
+                        ).permitAll()
+                        // Applying a code only returns a price quotation; booking creation and
+                        // payment remain protected customer operations.
+                        .requestMatchers(HttpMethod.POST, "/promotion/apply", "/promotions/apply").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(httpBasic -> {})

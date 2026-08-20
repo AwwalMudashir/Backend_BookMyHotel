@@ -48,9 +48,16 @@ class  JwtUtilTest {
                 .authorities("ROLE_CUSTOMER")
                 .build();
 
-        assertTrue(jwtUtil.validateToken(token, matchingUser));
-        assertFalse(jwtUtil.validateToken(token, differentUser));
-        System.out.println("Succeeded");
+        boolean matchingUserValid = jwtUtil.validateToken(token, matchingUser);
+        boolean differentUserValid = jwtUtil.validateToken(token, differentUser);
+
+        System.out.println("[TC-U01 JWT VALIDATION]");
+        System.out.println("Expected matching-user result: true | Actual: " + matchingUserValid);
+        System.out.println("Expected different-user result: false | Actual: " + differentUserValid);
+        System.out.println("Result: token is accepted only for its authenticated owner");
+
+        assertTrue(matchingUserValid);
+        assertFalse(differentUserValid);
     }
 
     @Test
