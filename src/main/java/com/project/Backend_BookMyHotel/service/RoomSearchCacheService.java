@@ -5,7 +5,6 @@ import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.RoomSearchResult;
 import com.project.Backend_BookMyHotel.dto.RoomTag;
-import com.project.Backend_BookMyHotel.repository.BranchRepository;
 import com.project.Backend_BookMyHotel.repository.RoomRepository;
 import com.project.Backend_BookMyHotel.specification.RoomSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,9 +36,6 @@ public class RoomSearchCacheService {
 
     @Autowired
     private RoomRepository roomRepository;
-
-    @Autowired
-    private BranchRepository branchRepository;
 
     @Autowired
     private ExchangeRateService exchangeRateService;
@@ -82,7 +78,7 @@ public class RoomSearchCacheService {
         Pageable pageable = PageRequest.of(page, size, parseSortParameter(sort));
 
         Map<String, RoomSpecification.CurrencyPriceRange> priceRangesByCurrency =
-                buildPriceRangesByCurrency(city, country, minPrice, maxPrice, filterCurrency);
+                buildPriceRangesByCurrency(city, country, hotelIds, minPrice, maxPrice, filterCurrency);
 
         Specification<Room> spec = RoomSpecification.buildSearchSpec(
                 checkIn, checkOut, city, country, minPrice, maxPrice, roomType, maxOccupancy, hotelIds,
@@ -114,18 +110,23 @@ public class RoomSearchCacheService {
     // Returns null when no currency-aware filtering applies, in which case the specification
     // falls back to its original raw (currency-unaware) comparison for backward compatibility.
     private Map<String, RoomSpecification.CurrencyPriceRange> buildPriceRangesByCurrency(
-            String city, String country, BigDecimal minPrice, BigDecimal maxPrice, String filterCurrency
+            String city, String country, Set<Long> hotelIds,
+            BigDecimal minPrice, BigDecimal maxPrice, String filterCurrency
     ) {
         if (filterCurrency == null || filterCurrency.isBlank() || (minPrice == null && maxPrice == null)) {
             return null;
         }
 
         String normalizedFilterCurrency = filterCurrency.trim().toUpperCase(Locale.ROOT);
+        exchangeRateService.requireSupportedCurrency(normalizedFilterCurrency);
         // Blank strings must become null here, matching how the specification itself treats a
         // blank city/country as "no filter" rather than "match branches with an empty city".
         String normalizedCity = (city != null && !city.trim().isEmpty()) ? city.trim() : null;
         String normalizedCountry = (country != null && !country.trim().isEmpty()) ? country.trim() : null;
-        List<String> currencies = branchRepository.findDistinctCurrencies(normalizedCity, normalizedCountry);
+        boolean filterByHotels = hotelIds != null && !hotelIds.isEmpty();
+        List<Long> scopedHotelIds = filterByHotels ? List.copyOf(hotelIds) : List.of(-1L);
+        List<String> currencies = roomRepository.findDistinctEffectiveCurrencies(
+                normalizedCity, normalizedCountry, filterByHotels, scopedHotelIds);
 
         Map<String, RoomSpecification.CurrencyPriceRange> priceRangesByCurrency = new HashMap<>();
         for (String currency : currencies) {
@@ -133,6 +134,11 @@ public class RoomSearchCacheService {
                 continue;
             }
             String normalizedCurrency = currency.trim().toUpperCase(Locale.ROOT);
+            // Legacy rooms may contain a currency the provider cannot convert. They must not
+            // abort an otherwise valid search; they are simply excluded while a price filter is active.
+            if (!exchangeRateService.isSupportedCurrency(normalizedCurrency)) {
+                continue;
+            }
             BigDecimal convertedMin = minPrice != null
                     ? exchangeRateService.convert(minPrice, normalizedFilterCurrency, normalizedCurrency)
                     : null;

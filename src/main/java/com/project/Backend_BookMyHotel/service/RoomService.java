@@ -47,6 +47,9 @@ public class RoomService {
     private RoomRepository roomRepo;
 
     @Autowired
+    private ExchangeRateService exchangeRateService;
+
+    @Autowired
     private BookingRepository bookingRepo;
 
     @Autowired
@@ -105,7 +108,7 @@ public class RoomService {
 
     @Transactional
     @CacheEvict(value = "availability", allEntries = true)
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
     public ResponseEntity<?> createRoom(Long branchId, RoomRequestDto request, List<MultipartFile> imageFiles) {
         Optional<Branch> branchOpt = branchRepo.findById(branchId);
 
@@ -114,22 +117,31 @@ public class RoomService {
                     .body("Error: Branch with ID " + branchId + " not found.");
         }
 
-        Optional<RoomType> typeOpt = roomTypesRepo.findById(request.getRoomTypeId());
-        if (typeOpt.isEmpty()) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                    .body("Error: Assigned RoomType ID " + request.getRoomTypeId() + " does not exist.");
+        String roomTypeName = request.getRoomType();
+        if ((roomTypeName == null || roomTypeName.isBlank()) && request.getRoomTypeId() != null) {
+            Optional<RoomType> typeOpt = roomTypesRepo.findById(request.getRoomTypeId());
+            if (typeOpt.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body("Error: Assigned RoomType ID " + request.getRoomTypeId() + " does not exist.");
+            }
+            roomTypeName = typeOpt.get().getName();
+        }
+        if (roomTypeName == null || roomTypeName.isBlank()) {
+            return ResponseEntity.badRequest().body("Error: Room type is required.");
         }
 
         Room room = new Room();
         room.setActive(true);
         room.setBranch(branchOpt.get());
-        room.setRoomType(typeOpt.get().getName());
+        room.setRoomType(roomTypeName.trim());
+        room.setDescription(request.getDescription());
+        room.setMaxOccupancy(request.getMaxOccupancy());
         room.setPricePerNight(request.getPricePerNight());
         // Persist per-room currency when provided; otherwise default to branch currency for now
         if (request.getCurrency() != null && !request.getCurrency().isBlank()) {
-            room.setCurrency(request.getCurrency().trim().toUpperCase());
+            room.setCurrency(exchangeRateService.requireSupportedCurrency(request.getCurrency()));
         } else if (branchOpt.get().getCurrency() != null) {
-            room.setCurrency(branchOpt.get().getCurrency());
+            room.setCurrency(exchangeRateService.requireSupportedCurrency(branchOpt.get().getCurrency()));
         }
         room.setAmenities(request.getAmenities());
         if (request.getTags() != null) {
@@ -196,12 +208,16 @@ public class RoomService {
             Optional<RoomType> typeOpt = roomTypesRepo.findById(request.getRoomTypeId());
             if (typeOpt.isEmpty()) return ResponseEntity.badRequest().body("Error: Invalid RoomType ID.");
             room.setRoomType(typeOpt.get().getName());
+        } else if (request.getRoomType() != null && !request.getRoomType().isBlank()) {
+            room.setRoomType(request.getRoomType().trim());
         }
 
         room.setPricePerNight(request.getPricePerNight());
+        if (request.getDescription() != null) room.setDescription(request.getDescription());
+        if (request.getMaxOccupancy() != null) room.setMaxOccupancy(request.getMaxOccupancy());
         // Allow updating per-room currency when supplied by the admin UI
         if (request.getCurrency() != null && !request.getCurrency().isBlank()) {
-            room.setCurrency(request.getCurrency().trim().toUpperCase());
+            room.setCurrency(exchangeRateService.requireSupportedCurrency(request.getCurrency()));
         }
         room.setAmenities(request.getAmenities());
         if (request.getTags() != null) {
@@ -253,7 +269,7 @@ public class RoomService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
     public ResponseEntity<?> deleteRoomImage(Long branchId, String roomIdOrPublic, String publicId, String url) {
         if (!branchRepo.existsById(branchId)) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("Error: Target Branch not found.");
@@ -378,6 +394,8 @@ public class RoomService {
             dto.setCurrency(room.getBranch().getCurrency());
         }
         dto.setAmenities(room.getAmenities());
+        dto.setDescription(room.getDescription());
+        dto.setMaxOccupancy(room.getMaxOccupancy());
         dto.setTags(room.getTags());
 
         if (room.getBranch() != null) {

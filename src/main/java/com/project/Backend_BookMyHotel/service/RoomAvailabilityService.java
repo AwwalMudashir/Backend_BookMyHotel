@@ -46,7 +46,7 @@ public class RoomAvailabilityService {
 
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new EntityNotFoundException("Room not found with id: " + roomId));
-        String currency = room.getBranch().getCurrency();
+        String currency = roomCurrency(room);
 
         // 1. Fetch custom price or maintenance overrides from DB
         List<RoomAvailability> overrides = availabilityRepository
@@ -193,7 +193,7 @@ public class RoomAvailabilityService {
 
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new EntityNotFoundException("Room not found with id: " + roomId));
-        String currency = room.getBranch().getCurrency();
+        String currency = roomCurrency(room);
 
         LocalDate lastNight = checkOut.minusDays(1);
 
@@ -282,5 +282,11 @@ public class RoomAvailabilityService {
                 .isAvailable(entireStayAvailable)
                 .breakdown(breakdown)
                 .build();
+    }
+
+    private String roomCurrency(Room room) {
+        return room.getCurrency() != null && !room.getCurrency().isBlank()
+                ? room.getCurrency()
+                : room.getBranch().getCurrency();
     }
 }

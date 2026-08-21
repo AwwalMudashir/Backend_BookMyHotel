@@ -9,6 +9,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 @Service
 public class ExchangeRateService {
@@ -55,6 +57,29 @@ public class ExchangeRateService {
         BigDecimal convertedAmount = amountInUsd.multiply(toRate);
 
         return convertedAmount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public Set<String> getSupportedCurrencies() {
+        Set<String> currencies = new TreeSet<>(getExchangeRates().keySet());
+        currencies.add(BASE_CURRENCY);
+        return Set.copyOf(currencies);
+    }
+
+    public boolean isSupportedCurrency(String currency) {
+        if (currency == null || currency.isBlank()) {
+            return false;
+        }
+        return getSupportedCurrencies().contains(currency.trim().toUpperCase(Locale.ROOT));
+    }
+
+    public String requireSupportedCurrency(String currency) {
+        String normalized = currency == null ? "" : currency.trim().toUpperCase(Locale.ROOT);
+        if (!isSupportedCurrency(normalized)) {
+            throw new UnsupportedCurrencyException(
+                    "Currency " + (normalized.isBlank() ? "is required" : normalized)
+                            + " is not supported by the current exchange-rate provider. Choose a supported currency.");
+        }
+        return normalized;
     }
 
     private BigDecimal rateFor(Map<String, Double> rates, String currency) {

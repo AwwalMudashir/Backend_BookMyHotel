@@ -89,12 +89,14 @@ public class RoomSpecification {
             }
 
             // 3. Price Filters
-            if (priceRangesByCurrency != null && !priceRangesByCurrency.isEmpty()) {
+            if (priceRangesByCurrency != null) {
                 List<Predicate> currencyPredicates = new ArrayList<>();
+                Expression<String> effectiveCurrency = cb.upper(
+                        cb.<String>coalesce().value(root.get("currency")).value(branchJoin.get("currency")));
                 for (Map.Entry<String, CurrencyPriceRange> entry : priceRangesByCurrency.entrySet()) {
                     CurrencyPriceRange range = entry.getValue();
                     List<Predicate> rangePredicates = new ArrayList<>();
-                    rangePredicates.add(cb.equal(cb.upper(branchJoin.get("currency")), entry.getKey()));
+                    rangePredicates.add(cb.equal(effectiveCurrency, entry.getKey()));
                     if (range.min() != null) {
                         rangePredicates.add(cb.greaterThanOrEqualTo(root.get("pricePerNight"), range.min()));
                     }
@@ -103,7 +105,9 @@ public class RoomSpecification {
                     }
                     currencyPredicates.add(cb.and(rangePredicates.toArray(new Predicate[0])));
                 }
-                predicates.add(cb.or(currencyPredicates.toArray(new Predicate[0])));
+                predicates.add(currencyPredicates.isEmpty()
+                        ? cb.disjunction()
+                        : cb.or(currencyPredicates.toArray(new Predicate[0])));
             } else {
                 if (minPrice != null) {
                     predicates.add(cb.greaterThanOrEqualTo(root.get("pricePerNight"), minPrice));

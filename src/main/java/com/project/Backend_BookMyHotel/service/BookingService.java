@@ -153,7 +153,7 @@ public class BookingService {
         BigDecimal basePrice = priceCalculation.getTotalPrice();
         String bookingCurrency = priceCalculation.getCurrency();
         if (bookingCurrency == null || bookingCurrency.isBlank()) {
-            bookingCurrency = room.getBranch().getCurrency();
+            bookingCurrency = roomCurrency(room);
         }
         BigDecimal discountAmount = BigDecimal.ZERO;
         BigDecimal finalPrice = basePrice;
@@ -355,7 +355,7 @@ public class BookingService {
                 booking.getCheckOut(),
                 accommodationTotal,
                 booking.getTotalPrice(),
-                booking.getRoom().getBranch().getCurrency(),
+                roomCurrency(booking.getRoom()),
                 booking.getEcoPointsRedeemed(),
                 booking.getEcoPointsDiscount(),
                 toEmailServiceLines(booking)
@@ -485,7 +485,7 @@ public class BookingService {
 
         List<BookingAddonService> newAddons = new ArrayList<>();
         BigDecimal addedTotal = BigDecimal.ZERO;
-        String bookingCurrency = booking.getRoom().getBranch().getCurrency();
+        String bookingCurrency = roomCurrency(booking.getRoom());
         BigDecimal usdToBookingRate = exchangeRateService.convert(BigDecimal.ONE, "USD", bookingCurrency);
 
         for (AddServicesRequest.ServiceItem item : request.services()) {
@@ -722,6 +722,18 @@ public class BookingService {
                 .build();
     }
 
+    @Transactional
+    public ResponseEntity<?> updateReservationStatusForManager(Long bookingId, BookingStatus newStatus, User manager) {
+        Booking booking = bookingRepo.findById(bookingId)
+                .orElseThrow(() -> new NoSuchElementException("Booking not found with ID: " + bookingId));
+        Long bookingHotelId = booking.getRoom().getBranch().getHotel().getId();
+        if (manager.getManagedHotel() == null || !manager.getManagedHotel().getId().equals(bookingHotelId)) {
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "You can only update reservations for your assigned hotel.");
+        }
+        return updateReservationStatus(bookingId, newStatus, manager.getId());
+    }
+
     private boolean isServiceAvailableAtBranch(com.project.Backend_BookMyHotel.domain.Service service,
                                                com.project.Backend_BookMyHotel.domain.Branch branch) {
         if (Boolean.FALSE.equals(service.getActive()) || branch == null || branch.getHotel() == null) return false;
@@ -730,6 +742,11 @@ public class BookingService {
                 : service.getBranch() != null ? service.getBranch().getHotel().getId() : null;
         if (!branch.getHotel().getId().equals(serviceHotelId)) return false;
         return service.getBranch() == null || service.getBranch().getId().equals(branch.getId());
+    }
+
+    private String roomCurrency(Room room) {
+        return room.getCurrency() != null && !room.getCurrency().isBlank()
+                ? room.getCurrency() : room.getBranch().getCurrency();
     }
 
     private String addonName(BookingAddonService addon) {

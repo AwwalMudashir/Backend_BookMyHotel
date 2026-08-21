@@ -11,6 +11,8 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import com.project.Backend_BookMyHotel.service.HotelManagementAccessService;
 
 import java.util.List;
 
@@ -23,6 +25,9 @@ public class BranchController {
     @Autowired
     private ReviewService reviewService;
 
+    @Autowired
+    private HotelManagementAccessService accessService;
+
     @GetMapping("/all")
     @PreAuthorize("hasAuthority('ADMIN')")
     public ResponseEntity<?> getBranches(){
@@ -30,8 +35,9 @@ public class BranchController {
     }
 
     @PostMapping("/byHotel/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<?> getBranchesByHotel(@PathVariable Long id){
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
+    public ResponseEntity<?> getBranchesByHotel(@PathVariable Long id, Authentication authentication){
+        accessService.requireHotel(authentication, id);
         return branchService.getBranchesByHotel(id);
     }
 
@@ -64,20 +70,23 @@ public class BranchController {
     }
 
     @PostMapping("/create")
-    @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<?> createBranch(@RequestBody BranchRequestDto request){
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
+    public ResponseEntity<?> createBranch(@RequestBody BranchRequestDto request, Authentication authentication){
+        accessService.requireHotel(authentication, request.getHotelId());
         return branchService.createBranch(request.getHotelId(), request);
     }
 
     @PutMapping("/update/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<?> updateBranch(@PathVariable Long id, @RequestBody BranchRequestDto request){
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
+    public ResponseEntity<?> updateBranch(@PathVariable Long id, @RequestBody BranchRequestDto request, Authentication authentication){
+        accessService.requireBranch(authentication, id);
         return branchService.updateBranch(null, id, request);
     }
 
     @DeleteMapping("/delete/{id}")
-    @PreAuthorize("hasAuthority('ADMIN')")
-    public ResponseEntity<?> deleteBranch(@PathVariable Long id){
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
+    public ResponseEntity<?> deleteBranch(@PathVariable Long id, Authentication authentication){
+        accessService.requireBranch(authentication, id);
         return branchService.deleteBranch(null, id);
     }
 

@@ -2,10 +2,12 @@ package com.project.Backend_BookMyHotel.service;
 
 import com.project.Backend_BookMyHotel.domain.Booking;
 import com.project.Backend_BookMyHotel.domain.Hotel;
+import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.dto.AnalyticsSummaryResponse;
 import com.project.Backend_BookMyHotel.dto.BookingResponse;
 import com.project.Backend_BookMyHotel.dto.BookingStatus;
 import com.project.Backend_BookMyHotel.dto.HotelAnalyticsResponse;
+import com.project.Backend_BookMyHotel.dto.DailyAnalyticsResponse;
 import com.project.Backend_BookMyHotel.exception.UnsupportedCurrencyException;
 import com.project.Backend_BookMyHotel.repository.BookingRepository;
 import com.project.Backend_BookMyHotel.repository.HotelRepository;
@@ -25,6 +27,8 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class AnalyticsService {
@@ -103,7 +107,9 @@ public class AnalyticsService {
 
         String currency = null;
         if (booking.getRoom() != null && booking.getRoom().getBranch() != null) {
-            currency = booking.getRoom().getBranch().getCurrency();
+            Room room = booking.getRoom();
+            currency = room.getCurrency() != null && !room.getCurrency().isBlank()
+                    ? room.getCurrency() : room.getBranch().getCurrency();
         }
 
         if (currency == null || currency.isBlank()) {
@@ -117,7 +123,9 @@ public class AnalyticsService {
         try {
             return exchangeRateService.convert(amount, currency, "USD");
         } catch (UnsupportedCurrencyException ex) {
-            return amount;
+            // Never mislabel an unsupported native amount as USD. Legacy unsupported
+            // currencies are omitted until an administrator corrects the room currency.
+            return BigDecimal.ZERO;
         }
     }
 
@@ -172,6 +180,38 @@ public class AnalyticsService {
                 .averageDailyRate(computeAdr(revenue, roomNights))
                 .currency("USD")
                 .build());
+    }
+
+    @Transactional(readOnly = true)
+    public List<DailyAnalyticsResponse> getHotelTimeline(Long hotelId, LocalDate startDate, LocalDate endDate) {
+        if (!hotelRepository.existsById(hotelId)) {
+            throw new NoSuchElementException("Hotel not found with ID: " + hotelId);
+        }
+        LocalDate[] range = resolveDateRange(startDate, endDate);
+        if (range[0].isAfter(range[1])) {
+            throw new IllegalArgumentException("Start date cannot be after end date.");
+        }
+        if (ChronoUnit.DAYS.between(range[0], range[1]) > 366) {
+            throw new IllegalArgumentException("Analytics date range cannot exceed 366 days.");
+        }
+
+        Map<LocalDate, List<Booking>> bookingsByDate = bookingRepository
+                .findByHotelAndStatusAndCheckInBetween(hotelId, BookingStatus.CONFIRMED, range[0], range[1])
+                .stream()
+                .collect(Collectors.groupingBy(Booking::getCheckIn));
+
+        return range[0].datesUntil(range[1].plusDays(1))
+                .map(date -> {
+                    List<Booking> bookings = bookingsByDate.getOrDefault(date, List.of());
+                    long nights = bookings.stream()
+                            .mapToLong(booking -> ChronoUnit.DAYS.between(booking.getCheckIn(), booking.getCheckOut()))
+                            .sum();
+                    BigDecimal revenue = bookings.stream()
+                            .map(this::convertBookingRevenueToUsd)
+                            .reduce(BigDecimal.ZERO, BigDecimal::add);
+                    return new DailyAnalyticsResponse(date, nights, revenue, computeAdr(revenue, nights), "USD");
+                })
+                .toList();
     }
 
     private BigDecimal computeAdr(BigDecimal revenue, long roomNights) {

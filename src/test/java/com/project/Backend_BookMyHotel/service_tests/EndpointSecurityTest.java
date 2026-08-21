@@ -14,6 +14,7 @@ import com.project.Backend_BookMyHotel.service.PromotionService;
 import com.project.Backend_BookMyHotel.service.ReviewService;
 import com.project.Backend_BookMyHotel.service.RoomAvailabilityService;
 import com.project.Backend_BookMyHotel.service.UserDataDetailsService;
+import com.project.Backend_BookMyHotel.service.HotelManagementAccessService;
 import com.project.Backend_BookMyHotel.util.JwtUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -55,6 +56,9 @@ class EndpointSecurityTest {
 
     @MockitoBean
     private BranchService branchService;
+
+    @MockitoBean
+    private HotelManagementAccessService accessService;
 
     @MockitoBean
     private ReviewService reviewService;

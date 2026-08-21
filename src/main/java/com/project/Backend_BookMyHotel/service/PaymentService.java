@@ -79,7 +79,7 @@ public class PaymentService {
             return ResponseEntity.ok(toIntentResponse(
                     succeeded,
                     booking.getTotalPrice(),
-                    booking.getRoom().getBranch().getCurrency(),
+                    roomCurrency(booking),
                     null,
                     PaymentStatus.SUCCEEDED,
                     "succeeded"
@@ -94,7 +94,7 @@ public class PaymentService {
         // accepting either from the client would let someone pay $1 for a $500 stay by editing
         // the request body before it hits this endpoint.
         BigDecimal amount = booking.getTotalPrice();
-        String currency = booking.getRoom().getBranch().getCurrency();
+        String currency = roomCurrency(booking);
 
         // A retry (page refresh, double-click, flaky network) would otherwise call this endpoint
         // again and create a brand new Stripe PaymentIntent + Payment row every time, leaving a
@@ -660,5 +660,11 @@ public class PaymentService {
                 ? BigDecimal.ONE
                 : BigDecimal.valueOf(100);
         return amount.multiply(multiplier).setScale(0, RoundingMode.HALF_UP).longValueExact();
+    }
+
+    private String roomCurrency(Booking booking) {
+        String roomCurrency = booking.getRoom().getCurrency();
+        return roomCurrency != null && !roomCurrency.isBlank()
+                ? roomCurrency : booking.getRoom().getBranch().getCurrency();
     }
 }

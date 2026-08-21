@@ -33,6 +33,9 @@ public class BranchService {
     @Autowired
     private ServiceRepository serviceRepo;
 
+    @Autowired
+    private ExchangeRateService exchangeRateService;
+
     public ResponseEntity<?> getBranches() {
         List<Branch> branches = branchRepo.findAll();
         return ResponseEntity.ok(branches);
@@ -109,7 +112,7 @@ public class BranchService {
         branch.setCity(request.getCity().trim());
         branch.setCountry(request.getCountry() != null ? request.getCountry().trim() : null);
         branch.setAddress(request.getAddress());
-        branch.setCurrency(request.getCurrency().trim().toUpperCase(Locale.ROOT));
+        branch.setCurrency(exchangeRateService.requireSupportedCurrency(request.getCurrency()));
         branch.setCheckInTime(request.getCheckInTime());
         branch.setCheckOutTime(request.getCheckOutTime());
         branch.setEcoCertified(request.getEcoCertified() != null ? request.getEcoCertified() : false);
@@ -144,7 +147,7 @@ public class BranchService {
             branch.setCountry(request.getCountry().trim());
         }
         if (request.getCurrency() != null && !request.getCurrency().isBlank()) {
-            branch.setCurrency(request.getCurrency().trim().toUpperCase(Locale.ROOT));
+            branch.setCurrency(exchangeRateService.requireSupportedCurrency(request.getCurrency()));
         }
 
         branch.setName(request.getName());
@@ -167,7 +170,7 @@ public class BranchService {
     }
 
     @Transactional
-    @PreAuthorize("hasAuthority('ADMIN')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
     public ResponseEntity<?> deleteBranch(Long hotelId, Long branchId) {
         Optional<Branch> branchOpt = branchRepo.findById(branchId);
         if (branchOpt.isEmpty()) {
@@ -225,7 +228,8 @@ public class BranchService {
                 .description(room.getDescription())
                 .maxOccupancy(room.getMaxOccupancy())
                 .pricePerNight(room.getPricePerNight())
-                .currency(room.getBranch().getCurrency())
+                .currency(room.getCurrency() != null && !room.getCurrency().isBlank()
+                        ? room.getCurrency() : room.getBranch().getCurrency())
                 .amenities(room.getAmenities())
                 .images(room.getImages())
                 .tags(room.getTags())

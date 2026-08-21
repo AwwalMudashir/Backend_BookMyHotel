@@ -10,6 +10,8 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import com.project.Backend_BookMyHotel.service.HotelManagementAccessService;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -20,6 +22,9 @@ public class AvailabilityController {
 
     @Autowired
     private RoomAvailabilityService availabilityService;
+
+    @Autowired
+    private HotelManagementAccessService accessService;
 
     @GetMapping("/{roomId}/calendar")
     public ResponseEntity<AvailabilityCalendar> getRoomCalendar(
@@ -49,23 +54,27 @@ public class AvailabilityController {
         return ResponseEntity.ok(response);
     }
     @PutMapping("/{roomId}/availability")
-    @PreAuthorize("hasAuthority('HOTEL_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
     public ResponseEntity<String> setRoomAvailability(
             @PathVariable Long roomId,
-            @Valid @RequestBody SetRoomAvailabilityRequest request
+            @Valid @RequestBody SetRoomAvailabilityRequest request,
+            Authentication authentication
     ) {
+        accessService.requireRoom(authentication, roomId);
         availabilityService.setRoomAvailability(roomId, request);
         return ResponseEntity.ok("Room availability and pricing updated successfully.");
     }
 
     @PutMapping("/{roomId}/update-rate")
-    @PreAuthorize("hasAuthority('HOTEL_MANAGER')")
+    @PreAuthorize("hasAnyAuthority('ADMIN','HOTEL_MANAGER')")
     public ResponseEntity<String> updateDailyRate(
             @PathVariable Long roomId,
             @RequestParam LocalDate date,
             @RequestParam BigDecimal newRate,
-            @RequestParam String reason
+            @RequestParam String reason,
+            Authentication authentication
     ) {
+        accessService.requireRoom(authentication, roomId);
         availabilityService.updateDailyRate(roomId,date,newRate,reason);
         return ResponseEntity.ok("Daily Rate Updated successfully.");
     }

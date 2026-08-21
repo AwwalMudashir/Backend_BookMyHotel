@@ -53,4 +53,13 @@ public class ExchangeRateServiceTest {
         Assertions.assertThrows(UnsupportedCurrencyException.class,
                 () -> service.convert(BigDecimal.valueOf(100), "GBP", "ZWL"));
     }
+
+    @Test
+    void supportedCurrencies_AlwaysIncludesUsdAndProviderCurrencies() {
+        ExchangeRateService service = serviceWithRates(Map.of("GBP", 0.78, "EUR", 0.91));
+
+        Assertions.assertEquals(java.util.Set.of("USD", "GBP", "EUR"), service.getSupportedCurrencies());
+        Assertions.assertTrue(service.isSupportedCurrency("gbp"));
+        Assertions.assertFalse(service.isSupportedCurrency("SAR"));
+    }
 }

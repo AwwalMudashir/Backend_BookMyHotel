@@ -1,8 +1,10 @@
 package com.project.Backend_BookMyHotel.service_tests;
 
 import com.project.Backend_BookMyHotel.domain.Branch;
+import com.project.Backend_BookMyHotel.domain.Hotel;
 import com.project.Backend_BookMyHotel.dto.ServiceResponse;
 import com.project.Backend_BookMyHotel.repository.BranchRepository;
+import com.project.Backend_BookMyHotel.repository.ServiceRepository;
 import com.project.Backend_BookMyHotel.service.BranchService;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.Assertions;
@@ -23,6 +25,9 @@ public class BranchServiceTest {
     @Mock
     private BranchRepository branchRepo;
 
+    @Mock
+    private ServiceRepository serviceRepo;
+
     @InjectMocks
     private BranchService branchService;
 
@@ -30,15 +35,20 @@ public class BranchServiceTest {
     void getServicesByBranchId_Success_ReturnsMappedServiceResponses() {
         Branch branch = new Branch();
         branch.setId(10L);
+        Hotel hotel = new Hotel();
+        hotel.setId(5L);
+        branch.setHotel(hotel);
 
         com.project.Backend_BookMyHotel.domain.Service spa = new com.project.Backend_BookMyHotel.domain.Service();
         spa.setId(1L);
         spa.setBranch(branch);
+        spa.setHotel(hotel);
         spa.setName("Spa");
         spa.setPrice(BigDecimal.valueOf(50));
         branch.setServices(List.of(spa));
 
-        Mockito.when(branchRepo.findByIdWithServices(10L)).thenReturn(Optional.of(branch));
+        Mockito.when(branchRepo.findById(10L)).thenReturn(Optional.of(branch));
+        Mockito.when(serviceRepo.findAvailableForBranch(5L, 10L)).thenReturn(List.of(spa));
 
         List<ServiceResponse> result = branchService.getServicesByBranchId(10L);
 
@@ -49,7 +59,7 @@ public class BranchServiceTest {
 
     @Test
     void getServicesByBranchId_WhenBranchNotFound_ThrowsEntityNotFoundException() {
-        Mockito.when(branchRepo.findByIdWithServices(999L)).thenReturn(Optional.empty());
+        Mockito.when(branchRepo.findById(999L)).thenReturn(Optional.empty());
 
         Assertions.assertThrows(EntityNotFoundException.class,
                 () -> branchService.getServicesByBranchId(999L));

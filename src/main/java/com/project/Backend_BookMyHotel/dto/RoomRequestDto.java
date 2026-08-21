@@ -15,6 +15,9 @@ import java.util.Set;
 public class RoomRequestDto {
     private BigDecimal pricePerNight;
     private Long roomTypeId;
+    private String roomType;
+    private String description;
+    private Integer maxOccupancy;
     private Map<String, Object> amenities;
     private Set<RoomTag> tags;
     // Optional image URLs provided by admin (external images). These are appended to the room's image gallery

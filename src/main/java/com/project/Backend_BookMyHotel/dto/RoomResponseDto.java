@@ -20,6 +20,8 @@ public class RoomResponseDto {
     private BigDecimal pricePerNight;
     private String currency;
     private String roomTypeName;
+    private String description;
+    private Integer maxOccupancy;
     private Map<String, Object> amenities;
     private List<String> images;
     // Cloudinary image public IDs
