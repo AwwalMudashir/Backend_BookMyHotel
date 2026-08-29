@@ -48,6 +48,22 @@ public class Booking {
     @JoinColumn(name = "promotion_id")
     private Promotion promotion;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "off_season_package_id")
+    private OffSeasonPackage offSeasonPackage;
+
+    // Package details are snapshotted so historical booking records and email receipts remain
+    // accurate even when a manager later edits the package's marketing copy or discount.
+    @Column(name = "package_code", length = 40)
+    private String packageCode;
+
+    @Column(name = "package_name", length = 120)
+    private String packageName;
+
+    @Builder.Default
+    @Column(name = "package_discount", nullable = false, precision = 12, scale = 2)
+    private BigDecimal packageDiscount = BigDecimal.ZERO;
+
     @Column(name = "total_price")
     private BigDecimal totalPrice;
 
@@ -71,6 +87,7 @@ public class Booking {
     @Column(name = "eco_points_discount", nullable = false, precision = 12, scale = 2)
     private BigDecimal ecoPointsDiscount = BigDecimal.ZERO;
 
+    @Builder.Default
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

@@ -129,15 +129,6 @@
 			<version>2.1.0</version>
 		</dependency>
 
-<!--	Auto-loads a .env file (if present) into Spring's environment at startup, ahead of any
-		${VAR_NAME} placeholder resolution in application*.properties — Spring Boot doesn't do
-		this on its own the way Node/dotenv-based stacks do.	-->
-		<dependency>
-			<groupId>me.paulschwarz</groupId>
-			<artifactId>spring-dotenv</artifactId>
-			<version>4.0.0</version>
-		</dependency>
-
 <!--	For Cloudinary	-->
 		<dependency>
 			<groupId>com.cloudinary</groupId>

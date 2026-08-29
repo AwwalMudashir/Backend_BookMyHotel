@@ -25,10 +25,11 @@ public class RoomController {
     private HotelManagementAccessService accessService;
 
     @GetMapping("/types")
-    public ResponseEntity<?> allRoomTypesByCategory(Authentication authentication, @RequestParam String category){
-        return roomService.getAllRoomTypes(authentication,category);
+    public ResponseEntity<?> allRoomTypesByCategory(@RequestParam(required = false) String category){
+        return roomService.getAllRoomTypes(category);
     }
 
+    @GetMapping("/categories")
     public ResponseEntity<?> allCategories(){
         List<String> categories = new ArrayList<>(Arrays.asList("Standard", "Deluxe", "Suite", "Presidential Suite"));
         return ResponseEntity.ok(categories);

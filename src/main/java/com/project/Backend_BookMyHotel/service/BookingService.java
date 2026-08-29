@@ -3,6 +3,7 @@ package com.project.Backend_BookMyHotel.service;
 import com.project.Backend_BookMyHotel.domain.Booking;
 import com.project.Backend_BookMyHotel.domain.BookingAddonService;
 import com.project.Backend_BookMyHotel.domain.Promotion;
+import com.project.Backend_BookMyHotel.domain.OffSeasonPackage;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.*;
@@ -72,6 +73,9 @@ public class BookingService {
     private PromotionRepository promotionRepository;
 
     @Autowired
+    private OffSeasonPackageService offSeasonPackageService;
+
+    @Autowired
     private EmailTemplateService notificationService;
 
     @Autowired
@@ -127,6 +131,10 @@ public class BookingService {
             return ResponseEntity.badRequest().body("Eco points cannot be negative.");
         }
 
+        if (request.packageId() != null && request.promoCode() != null && !request.promoCode().isBlank()) {
+            return ResponseEntity.badRequest().body("An off-season package cannot be combined with a promotional code. Choose one offer.");
+        }
+
         User user = userRepository.findByEmail(email);
 
         if (user == null){
@@ -159,9 +167,23 @@ public class BookingService {
         BigDecimal finalPrice = basePrice;
         String appliedPromoCode = null;
         Promotion appliedPromotion = null;
+        OffSeasonPackage appliedPackage = null;
+        BigDecimal packageDiscount = BigDecimal.ZERO;
+
+        // Packages are selected offers with stay-window, room-type and minimum-night rules. A
+        // read-only preview establishes the price used by the summary; capacity is reserved under
+        // a row lock immediately before the booking is persisted below.
+        if (request.packageId() != null) {
+            OffSeasonPackageService.PackageApplication packagePreview = offSeasonPackageService.previewApplication(
+                    request.packageId(), room, checkIn, checkOut, basePrice, bookingCurrency);
+            appliedPackage = packagePreview.packageOffer();
+            packageDiscount = packagePreview.discountAmount();
+            discountAmount = packageDiscount;
+            finalPrice = packagePreview.finalPrice();
+        }
 
         // 4. Apply Promotion Code if provided
-        if (request.promoCode() != null && !request.promoCode().isBlank()) {
+        if (request.packageId() == null && request.promoCode() != null && !request.promoCode().isBlank()) {
             Long hotelId = room.getBranch() != null && room.getBranch().getHotel() != null
                     ? room.getBranch().getHotel().getId() : null;
 
@@ -247,6 +269,20 @@ public class BookingService {
         BigDecimal bookingTotal = finalPrice.subtract(ecoPointsDiscount).add(servicesTotal)
                 .setScale(2, RoundingMode.HALF_UP);
 
+        // Atomically reserve one package place only after all other validation has succeeded.
+        // If the final place was taken between preview and submit, this throws a clear error and
+        // the transaction creates neither a booking nor a partial package reservation.
+        if (request.packageId() != null) {
+            OffSeasonPackageService.PackageApplication reservedPackage = offSeasonPackageService.reserveAndApply(
+                    request.packageId(), room, checkIn, checkOut, basePrice, bookingCurrency);
+            appliedPackage = reservedPackage.packageOffer();
+            packageDiscount = reservedPackage.discountAmount();
+            discountAmount = packageDiscount;
+            finalPrice = reservedPackage.finalPrice();
+            bookingTotal = finalPrice.subtract(ecoPointsDiscount).add(servicesTotal)
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+
         String reference = "BMH" + UUID.randomUUID();
 
         // 6. Persist the PENDING booking and selected extras atomically. This prevents a payment
@@ -259,6 +295,10 @@ public class BookingService {
                 .status(BookingStatus.PENDING)
                 .reference(reference)
                 .promotion(appliedPromotion)
+                .offSeasonPackage(appliedPackage)
+                .packageCode(appliedPackage == null ? null : appliedPackage.getCode())
+                .packageName(appliedPackage == null ? null : appliedPackage.getName())
+                .packageDiscount(packageDiscount)
                 .totalPrice(bookingTotal)
                 .ecoPointsRedeemed(requestedEcoPoints)
                 .ecoPointsDiscount(ecoPointsDiscount)
@@ -287,6 +327,10 @@ public class BookingService {
                 .reference(reference)
                 .totalPrice(savedBooking.getTotalPrice())
                 .promoCode(appliedPromoCode)
+                .packageId(appliedPackage == null ? null : appliedPackage.getId())
+                .packageCode(savedBooking.getPackageCode())
+                .packageName(savedBooking.getPackageName())
+                .packageDiscount(savedBooking.getPackageDiscount())
                 .ecoPointsEarned(savedBooking.getEcoPointsEarned())
                 .ecoPointsRedeemed(savedBooking.getEcoPointsRedeemed())
                 .ecoPointsDiscount(savedBooking.getEcoPointsDiscount())
@@ -295,11 +339,13 @@ public class BookingService {
                 .priceBreakdown(BookingResponse.PriceBreakdown.builder()
                         .basePrice(basePrice)
                         .discountAmount(discountAmount)
+                        .packageDiscount(packageDiscount)
                         .servicesTotal(servicesTotal)
                         .ecoPointsRedeemed(requestedEcoPoints)
                         .ecoPointsDiscount(ecoPointsDiscount)
                         .finalPrice(bookingTotal)
                         .appliedPromoCode(appliedPromoCode)
+                        .appliedPackageCode(appliedPackage == null ? null : appliedPackage.getCode())
                         .build())
                 .build(), HttpStatus.CREATED);
     }
@@ -345,34 +391,33 @@ public class BookingService {
                 .add(booking.getEcoPointsDiscount() != null ? booking.getEcoPointsDiscount() : BigDecimal.ZERO);
 
         // Send Email Confirmation, including every paid extra and the final charged total.
-        String html = notificationService.bookingConfirmationTemplate(
-                (booking.getUser().getFirstName() + " " + booking.getUser().getLastName()).trim(),
-                booking.getReference(),
-                booking.getRoom().getBranch().getHotel().getName(),
-                booking.getRoom().getBranch().getName(),
-                booking.getRoom().getRoomType(),
-                booking.getCheckIn(),
-                booking.getCheckOut(),
-                accommodationTotal,
-                booking.getTotalPrice(),
-                roomCurrency(booking.getRoom()),
-                booking.getEcoPointsRedeemed(),
-                booking.getEcoPointsDiscount(),
-                toEmailServiceLines(booking)
-        );
+        String guestName = (booking.getUser().getFirstName() + " " + booking.getUser().getLastName()).trim();
+        String html = booking.getOffSeasonPackage() == null
+                ? notificationService.bookingConfirmationTemplate(
+                        guestName, booking.getReference(), booking.getRoom().getBranch().getHotel().getName(),
+                        booking.getRoom().getBranch().getName(), booking.getRoom().getRoomType(),
+                        booking.getCheckIn(), booking.getCheckOut(), accommodationTotal, booking.getTotalPrice(),
+                        roomCurrency(booking.getRoom()), booking.getEcoPointsRedeemed(), booking.getEcoPointsDiscount(),
+                        toEmailServiceLines(booking))
+                : notificationService.bookingConfirmationTemplate(
+                        guestName, booking.getReference(), booking.getRoom().getBranch().getHotel().getName(),
+                        booking.getRoom().getBranch().getName(), booking.getRoom().getRoomType(),
+                        booking.getCheckIn(), booking.getCheckOut(),
+                        accommodationTotal.add(booking.getPackageDiscount()), booking.getTotalPrice(),
+                        roomCurrency(booking.getRoom()), booking.getEcoPointsRedeemed(), booking.getEcoPointsDiscount(),
+                        booking.getPackageName(), booking.getPackageCode(), booking.getPackageDiscount(),
+                        toEmailServiceLines(booking));
 
         // This runs in the same transaction as the payment/booking status writes above (this method
         // is called directly from PaymentService.confirmPayment() inside the webhook handler). An
         // uncaught exception here — e.g. Resend's API rejecting the send — would roll back the
         // whole transaction and silently undo a real, already-succeeded Stripe payment. A failed
         // confirmation email is not worth losing that for, so it's logged and swallowed instead.
-        System.out.println("HTML template built, sending email");
         boolean sent = resendEmailService.sendEmail(
                 booking.getUser().getEmail(),
                 "Confirmation of Booked Room",
                 html
         );
-        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
 
         if (!sent) {
             log.error("Failed to send booking confirmation email for booking {}", booking.getId());
@@ -401,13 +446,18 @@ public class BookingService {
         LocalDate today = LocalDate.now();
         boolean isEarlyCheckout = !booking.getCheckIn().isAfter(today) && booking.getCheckOut().isAfter(today);
 
-        // Customers can cancel before check-out, including current stays. If the booking has
-        // already reached or passed the checkout date, there is no cancellation action needed.
-        if ("CUSTOMER".equalsIgnoreCase(userRole.toString()) && !booking.getCheckOut().isAfter(today)) {
-            return ResponseEntity.badRequest().body("Bookings can only be cancelled before the checkout date.");
+        // A customer cancellation is only valid before check-in. Once the stay has begun it is an
+        // early-checkout/support workflow; administrators retain an override for exceptional cases.
+        if ("CUSTOMER".equalsIgnoreCase(userRole.toString()) && !booking.getCheckIn().isAfter(today)) {
+            return ResponseEntity.badRequest().body(
+                    "This stay has already started. Please contact the hotel for early checkout or cancellation support.");
         }
 
         booking.setStatus(BookingStatus.CANCELLED);
+
+        if (booking.getOffSeasonPackage() != null) {
+            offSeasonPackageService.releaseReservation(booking.getOffSeasonPackage().getId());
+        }
 
         // Claw back eco points this booking previously earned — only fires if it had already
         // been confirmed (a still-PENDING booking never had any awarded in the first place).
@@ -639,6 +689,10 @@ public class BookingService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
+                .packageId(packageIdOf(booking))
+                .packageCode(booking.getPackageCode())
+                .packageName(booking.getPackageName())
+                .packageDiscount(booking.getPackageDiscount())
                 .ecoPointsEarned(booking.getEcoPointsEarned())
                 .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
                 .ecoPointsDiscount(booking.getEcoPointsDiscount())
@@ -651,6 +705,10 @@ public class BookingService {
     // Null-safe accessor for Booking.promotion.code — most bookings won't have one attached.
     private String promoCodeOf(Booking booking) {
         return booking.getPromotion() != null ? booking.getPromotion().getCode() : null;
+    }
+
+    private Long packageIdOf(Booking booking) {
+        return booking.getOffSeasonPackage() != null ? booking.getOffSeasonPackage().getId() : null;
     }
 
     private ResponseEntity<BookingResponse> mapToBookingResponse(Booking booking) {
@@ -669,6 +727,10 @@ public class BookingService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
+                .packageId(packageIdOf(booking))
+                .packageCode(booking.getPackageCode())
+                .packageName(booking.getPackageName())
+                .packageDiscount(booking.getPackageDiscount())
                 .ecoPointsEarned(booking.getEcoPointsEarned())
                 .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
                 .ecoPointsDiscount(booking.getEcoPointsDiscount())
@@ -714,6 +776,10 @@ public class BookingService {
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
                 .promoCode(promoCodeOf(booking))
+                .packageId(packageIdOf(booking))
+                .packageCode(booking.getPackageCode())
+                .packageName(booking.getPackageName())
+                .packageDiscount(booking.getPackageDiscount())
                 .ecoPointsEarned(booking.getEcoPointsEarned())
                 .ecoPointsRedeemed(booking.getEcoPointsRedeemed())
                 .ecoPointsDiscount(booking.getEcoPointsDiscount())

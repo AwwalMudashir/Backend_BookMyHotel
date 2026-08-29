@@ -20,6 +20,8 @@ public record CreateBookingRequest(
 
         String promoCode,
 
+        Long packageId,
+
         @Valid
         List<AddServicesRequest.ServiceItem> services,
 
@@ -27,11 +29,16 @@ public record CreateBookingRequest(
         Integer ecoPointsToRedeem
 ) {
     public CreateBookingRequest(Long roomId, LocalDate checkIn, LocalDate checkOut, String promoCode) {
-        this(roomId, checkIn, checkOut, promoCode, List.of(), 0);
+        this(roomId, checkIn, checkOut, promoCode, null, List.of(), 0);
     }
 
     public CreateBookingRequest(Long roomId, LocalDate checkIn, LocalDate checkOut, String promoCode,
                                 List<AddServicesRequest.ServiceItem> services) {
-        this(roomId, checkIn, checkOut, promoCode, services, 0);
+        this(roomId, checkIn, checkOut, promoCode, null, services, 0);
+    }
+
+    public CreateBookingRequest(Long roomId, LocalDate checkIn, LocalDate checkOut, String promoCode,
+                                List<AddServicesRequest.ServiceItem> services, Integer ecoPointsToRedeem) {
+        this(roomId, checkIn, checkOut, promoCode, null, services, ecoPointsToRedeem);
     }
 }

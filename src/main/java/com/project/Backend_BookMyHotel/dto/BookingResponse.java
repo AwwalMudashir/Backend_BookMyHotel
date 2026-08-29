@@ -28,6 +28,10 @@ public class BookingResponse {
     // The promo code actually stored on the booking (Booking.promotion), independent of
     // priceBreakdown.appliedPromoCode below, which only ever populates on the create response.
     private String promoCode;
+    private Long packageId;
+    private String packageCode;
+    private String packageName;
+    private BigDecimal packageDiscount;
     // Only non-zero once the booking has been confirmed for an eco-friendly-tagged room — see
     // BookingService.confirmBooking. Always 0 on the create response itself.
     private Integer ecoPointsEarned;
@@ -42,11 +46,13 @@ public class BookingResponse {
     public static class PriceBreakdown {
         private BigDecimal basePrice;
         private BigDecimal discountAmount;
+        private BigDecimal packageDiscount;
         private BigDecimal servicesTotal;
         private BigDecimal ecoPointsDiscount;
         private Integer ecoPointsRedeemed;
         private BigDecimal finalPrice;
         private String appliedPromoCode;
+        private String appliedPackageCode;
     }
 
     @Data

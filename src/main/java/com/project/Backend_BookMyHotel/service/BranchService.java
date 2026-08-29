@@ -223,6 +223,7 @@ public class BranchService {
     private RoomResponse toRoomResponse(Room room) {
         return RoomResponse.builder()
                 .id(room.getId())
+                .roomId(room.getRoomId())
                 .branchId(room.getBranch().getId())
                 .roomType(room.getRoomType())
                 .description(room.getDescription())
@@ -232,6 +233,7 @@ public class BranchService {
                         ? room.getCurrency() : room.getBranch().getCurrency())
                 .amenities(room.getAmenities())
                 .images(room.getImages())
+                .publicIds(room.getPublicIds())
                 .tags(room.getTags())
                 .build();
     }

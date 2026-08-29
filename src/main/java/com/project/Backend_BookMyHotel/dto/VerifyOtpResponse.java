@@ -10,4 +10,5 @@ import lombok.NoArgsConstructor;
 public class VerifyOtpResponse {
     private boolean isSuccess;
     private String message;
+    private String resetToken;
 }

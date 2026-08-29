@@ -38,8 +38,19 @@ public class ContactService {
 
         ContactEnquiry saved = contactEnquiryRepository.save(enquiry);
 
-        String html = emailTemplateService.contactTemplate(saved.getName(), saved.getEmail(), saved.getMessage());
-        boolean emailSent = resendEmailService.sendContactEmail(supportEmail, saved.getEmail(), "New Contact Inquiry from " + saved.getName(), html);
+        boolean emailSent = false;
+        try {
+            String html = emailTemplateService.contactTemplate(saved.getName(), saved.getEmail(), saved.getMessage());
+            emailSent = resendEmailService.sendContactEmail(
+                    supportEmail,
+                    saved.getEmail(),
+                    "New Contact Inquiry from " + saved.getName(),
+                    html);
+        } catch (RuntimeException exception) {
+            // The enquiry has already been persisted. An email-provider outage must not turn a
+            // successfully received customer message into a failed HTTP request.
+            log.error("Contact notification failed for enquiry {}", saved.getId(), exception);
+        }
 
         if (!emailSent) {
             log.error("Failed to send contact notification email for enquiry {}", saved.getId());

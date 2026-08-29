@@ -24,6 +24,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 
@@ -59,7 +60,7 @@ public class AppConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(custom -> custom.disable())
                 .authorizeHttpRequests(registry -> registry
-                        .requestMatchers("/auth/register", "/auth/login","/auth/google","/auth/refresh","/auth/forgot-password","/auth/reset-password","/auth/verify-otp","/auth/resend-otp","/auth/refreshes","/auth/logout","/search/rooms","/payments/webhook","/contact","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/auth/register", "/auth/login","/auth/google","/auth/refresh","/auth/forgot-password","/auth/reset-password","/auth/verify-otp","/auth/resend-otp","/auth/logout","/search/rooms","/payments/webhook","/contact","/error","/swagger-ui/index.html", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         // Public browsing data used before a customer signs in.
                         .requestMatchers(HttpMethod.GET,
                                 "/hotel/**",
@@ -73,11 +74,14 @@ public class AppConfig {
                                 "/promotions",
                                 "/promotions/**",
                                 "/promotion",
-                                "/promotion/**"
+                                "/promotion/**",
+                                "/packages/public/**",
+                                "/off-season-packages/public/**"
                         ).permitAll()
                         // Applying a code only returns a price quotation; booking creation and
                         // payment remain protected customer operations.
                         .requestMatchers(HttpMethod.POST, "/promotion/apply", "/promotions/apply").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/packages/public/quote", "/off-season-packages/public/quote").permitAll()
                         .anyRequest().authenticated())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .httpBasic(httpBasic -> {})
@@ -102,8 +106,11 @@ public class AppConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(allowedOrigins.split(",")));
-        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isBlank())
+                .toList());
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

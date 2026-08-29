@@ -16,11 +16,12 @@ import java.util.Map;
 public class SearchServiceTestConfig {
 
     @Bean
+    @Primary
     CacheManager testCacheManager() {
         return new ConcurrentMapCacheManager("availability");
     }
 
-    // Real ExchangeRateService calls out to frankfurter.app; tests need deterministic, offline
+    // Real ExchangeRateService calls the external Frankfurter API; tests need deterministic, offline
     // rates instead. Spied (not mocked outright) so #convert()'s real pivot-through-USD math
     // still runs against these fixed rates.
     @Bean

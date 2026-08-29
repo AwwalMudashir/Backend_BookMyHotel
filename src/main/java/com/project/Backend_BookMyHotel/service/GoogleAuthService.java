@@ -21,7 +21,6 @@ import org.springframework.stereotype.Service;
 
 import java.security.GeneralSecurityException;
 import java.io.IOException;
-import java.util.Random;
 import java.util.UUID;
 
 @Service
@@ -155,7 +154,7 @@ public class GoogleAuthService {
     }
 
     private String generateRandomId() {
-        Random random = new Random();
-        return "BMH" + (random.nextInt() * 999999);
+        return "BMH" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 12).toUpperCase();
     }
 }

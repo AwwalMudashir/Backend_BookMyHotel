@@ -1,22 +1,12 @@
 package com.project.Backend_BookMyHotel.controller;
 
-import com.project.Backend_BookMyHotel.domain.OtpVerification;
-import com.project.Backend_BookMyHotel.domain.RefreshToken;
-import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.*;
-import com.project.Backend_BookMyHotel.repository.RefreshTokenRepository;
 import com.project.Backend_BookMyHotel.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/auth")
@@ -27,9 +17,6 @@ public class AuthController {
 
     @Autowired
     private com.project.Backend_BookMyHotel.service.GoogleAuthService googleAuthService;
-
-    @Autowired
-    private RefreshTokenRepository refreshTokenRepo;
 
     @PostMapping("/register")
     public ResponseEntity<?> createUser(@RequestBody OnboardDto onboardDto){
@@ -106,14 +93,8 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(@RequestParam String refreshToken) {
-        return userService.logout(refreshToken);
+    public ResponseEntity<?> logout(@RequestBody TokenRefreshRequest request) {
+        return userService.logout(request == null ? null : request.getRefreshToken());
     }
-
-    @GetMapping("/refreshes")
-    public List<RefreshToken> allrefreshTokens(){
-        return refreshTokenRepo.findAll();
-    }
-
 
 }

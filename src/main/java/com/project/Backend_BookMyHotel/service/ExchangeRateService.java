@@ -24,7 +24,7 @@ public class ExchangeRateService {
     // Fetches live exchange rates relative to USD base, cached in Redis for 24 hrs.
     @Cacheable(value = "exchange-rates", key = "'latest'")
     public Map<String, Double> getExchangeRates() {
-        String url = "https://api.frankfurter.app/latest?from=USD";
+        String url = "https://api.frankfurter.dev/v1/latest?base=USD";
         // Response format: { "rates": { "EUR": 0.92, "GBP": 0.78, "AED": 3.67, "JPY": 155.0 } }
         // Note: the base currency (USD) is never present as a key in "rates".
         ExchangeResponse response = restTemplate.getForObject(url, ExchangeResponse.class);
@@ -33,7 +33,7 @@ public class ExchangeRateService {
 
     // Converts an amount from source currency to target currency.
     // Throws UnsupportedCurrencyException rather than silently assuming a 1:1 rate for
-    // currencies frankfurter.app (ECB-tracked only) doesn't report.
+    // currencies Frankfurter (ECB-tracked only) doesn't report.
     public BigDecimal convert(BigDecimal amount, String fromCurrency, String toCurrency) {
         if (amount == null) {
             return null;

@@ -3,7 +3,6 @@ package com.project.Backend_BookMyHotel.service;
 import com.project.Backend_BookMyHotel.domain.Branch;
 import com.project.Backend_BookMyHotel.domain.Room;
 import com.project.Backend_BookMyHotel.domain.RoomType;
-import com.project.Backend_BookMyHotel.domain.User;
 import com.project.Backend_BookMyHotel.dto.BookingStatus;
 import com.project.Backend_BookMyHotel.dto.RoomRequestDto;
 import com.project.Backend_BookMyHotel.dto.RoomResponseDto;
@@ -12,14 +11,12 @@ import com.project.Backend_BookMyHotel.repository.BranchRepository;
 import com.project.Backend_BookMyHotel.repository.RoomAvailabilityRepository;
 import com.project.Backend_BookMyHotel.repository.RoomRepository;
 import com.project.Backend_BookMyHotel.repository.RoomTypesRepository;
-import com.project.Backend_BookMyHotel.repository.UserRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -33,9 +30,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class RoomService {
-
-    @Autowired
-    private UserRepository userRepo;
 
     @Autowired
     private RoomTypesRepository roomTypesRepo;
@@ -58,25 +52,13 @@ public class RoomService {
     @Autowired
     private CloudinaryService cloudinaryService;
 
-    public ResponseEntity<?> getAllRoomTypes(Authentication authentication, String category) {
-        if (authentication == null || !authentication.isAuthenticated()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Not authenticated");
-        }
-
-        // 2. Fetch the existing user from the database
-        String email = authentication.getName();
-        User user = userRepo.findByEmail(email);
-
-        if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("User not found");
-        }
-
-        if (category == "" || category.isBlank() || category == null){
+    public ResponseEntity<?> getAllRoomTypes(String category) {
+        if (category == null || category.isBlank()) {
             List<RoomType> roomTypes = roomTypesRepo.findAll();
             return ResponseEntity.ok(roomTypes);
         }
 
-        List<RoomType> roomTypes = roomTypesRepo.findAllByCategory(category).get();
+        List<RoomType> roomTypes = roomTypesRepo.findAllByCategory(category).orElseGet(List::of);
         return ResponseEntity.ok(roomTypes);
     }
 

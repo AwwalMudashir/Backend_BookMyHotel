@@ -18,6 +18,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -51,27 +52,31 @@ public class UserService {
     @Autowired
     private ResendEmailService resendEmailService;
 
-    private BCryptPasswordEncoder bencoder = new BCryptPasswordEncoder(12);
+    private final BCryptPasswordEncoder bencoder = new BCryptPasswordEncoder(12);
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public String generateRandomId(){
-        Random random = new Random();
-        return "BMH" + (random.nextInt() * 999999);
+        return "BMH" + UUID.randomUUID().toString().replace("-", "")
+                .substring(0, 12).toUpperCase(Locale.ROOT);
     }
 
     private String generateSixDigitOtp() {
-        return String.format("%06d", new java.util.Random().nextInt(999999));
+        return String.format("%06d", secureRandom.nextInt(1_000_000));
     }
 
-    private void sendOtpEmail(String email, String otp) {
+    private boolean sendOtpEmail(String email, String otp) {
         String html = emailTemplateService.otpTemplate(email, otp, 5);
 
-        System.out.println("HTML template built, sending email");
-        boolean sent = resendEmailService.sendEmail(
+        return resendEmailService.sendEmail(
                 email,
                 "OTP Verification",
                 html
         );
-        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
+    }
+
+    private ResponseEntity<?> emailDeliveryUnavailable() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(Map.of("message", "We could not send the verification email. Please try again shortly."));
     }
 
     public ResponseEntity<?> createUser(OnboardDto onboardDto) {
@@ -110,13 +115,11 @@ public class UserService {
         // Sending of Registration Email
         String html = emailTemplateService.userWelcomeTemplate(user.getFirstName());
 
-        System.out.println("HTML template built, sending email");
         boolean sent = resendEmailService.sendEmail(
                 user.getEmail(),
                 "Registeration Successful",
                 html
         );
-        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
 
         if (!sent) {
             return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "welcome_email_failed").body(user);
@@ -174,13 +177,11 @@ public class UserService {
                 hotel.getName()
         );
 
-        System.out.println("HTML template built, sending email");
         boolean sent = resendEmailService.sendEmail(
                 user.getEmail(),
                 "Welcome Hotel Manager to BMH",
                 html
         );
-        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
 
         if (!sent) {
             return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "manager_welcome_email_failed").body(user);
@@ -229,13 +230,11 @@ public class UserService {
                 onboardDto.getPassword()
         );
 
-        System.out.println("HTML template built, sending email");
         boolean sent = resendEmailService.sendEmail(
                 user.getEmail(),
                 "Welcome Admin to BMH",
                 html
         );
-        System.out.println(sent ? "Email Sent successfully" : "Email sending failed");
 
         if (!sent) {
             return ResponseEntity.status(HttpStatus.CREATED).header("X-Email-Failure", "admin_welcome_email_failed").body(user);
@@ -256,13 +255,14 @@ public class UserService {
             if (userRepo.existsByEmail(request.getEmail())){
                 User user = userRepo.findByEmail(request.getEmail());
 
-                if (user.getGoogleId() == null){
+                if (user != null && user.getGoogleId() != null){
                     err.setStatus(HttpStatus.UNAUTHORIZED);
-                    err.setMessage("This user was created via Google Oauth, Sign in with Google");
+                    err.setMessage("This account was created with Google. Please use Google Sign-In.");
+                    return new ResponseEntity<>(err,HttpStatus.UNAUTHORIZED);
                 }
             }
             err.setStatus(HttpStatus.UNAUTHORIZED);
-            err.setMessage("User with this credentials doesn't exist");
+            err.setMessage("The email or password is incorrect.");
             return new ResponseEntity<>(err,HttpStatus.UNAUTHORIZED);
         }
 
@@ -404,7 +404,9 @@ public class UserService {
         otpRepo.save(otpRecord);
 
         // Resend Email
-        sendOtpEmail(userEmail, newOtp);
+        if (!sendOtpEmail(userEmail, newOtp)) {
+            return emailDeliveryUnavailable();
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "A new OTP has been sent.");
@@ -418,7 +420,9 @@ public class UserService {
         OtpVerification otpRecord = new OtpVerification(userEmail, otp, LocalDateTime.now().plusMinutes(5));
         OtpVerification savedOtp = otpRepo.save(otpRecord);
 
-        sendOtpEmail(userEmail, otp);
+        if (!sendOtpEmail(userEmail, otp)) {
+            return emailDeliveryUnavailable();
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "A new OTP has been sent.");
@@ -449,7 +453,9 @@ public class UserService {
         OtpVerification otpVerification = new OtpVerification(userEmail, otp, LocalDateTime.now().plusMinutes(5));
         OtpVerification savedOtp = otpRepo.save(otpVerification);
 
-        sendOtpEmail(userEmail, otp);
+        if (!sendOtpEmail(userEmail, otp)) {
+            return emailDeliveryUnavailable();
+        }
 
         Map<String, Object> response = new HashMap<>();
         response.put("message", "OTP sent successfully.");
@@ -495,6 +501,7 @@ public class UserService {
 
         resp.setSuccess(true);
         resp.setMessage("OTP verified successfully. You may now proceed to reset your password.");
+        resp.setResetToken(resetToken);
         return new ResponseEntity<>(resp,HttpStatus.OK);
     }
 
@@ -533,21 +540,29 @@ public class UserService {
         }
 
         Optional<OtpVerification> otpVerificationOpt = otpRepo.findByEmail(normalizedEmail);
-        boolean hasVerifiedResetToken = false;
         OtpVerification otpVerification = null;
         if (otpVerificationOpt.isPresent()) {
             otpVerification = otpVerificationOpt.get();
             String resetToken = resetDto != null ? resetDto.getResetToken() : null;
-            if (resetToken != null && !resetToken.isBlank()) {
-                hasVerifiedResetToken = resetToken.equals(otpVerification.getResetToken());
-            } else {
-                hasVerifiedResetToken = otpVerification.getResetToken() != null && !otpVerification.getResetToken().isBlank();
+            boolean hasVerifiedResetToken = resetToken != null
+                    && !resetToken.isBlank()
+                    && !otpVerification.isExpired()
+                    && resetToken.equals(otpVerification.getResetToken());
+            if (!hasVerifiedResetToken) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("success", false, "message", "Your verified reset session is invalid or expired. Please request a new OTP."));
             }
-        }
-
-        if (!hasVerifiedResetToken) {
+        } else {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("success", false, "message", "Password reset requires a verified OTP. Please verify the code first."));
+        }
+
+        if (authentication != null && authentication.isAuthenticated()) {
+            String oldPassword = resetDto != null ? resetDto.getOldPassword() : null;
+            if (oldPassword == null || !bencoder.matches(oldPassword, user.getPassword())) {
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                        .body(Map.of("success", false, "message", "Current password is incorrect."));
+            }
         }
 
         String encryptedPassword = bencoder.encode(newPassword);

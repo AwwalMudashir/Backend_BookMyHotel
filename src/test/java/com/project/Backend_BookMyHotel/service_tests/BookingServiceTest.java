@@ -160,7 +160,7 @@ public class BookingServiceTest {
         Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
         Assertions.assertTrue(response.getBody() instanceof BookingResponse);
         BookingResponse body = (BookingResponse) response.getBody();
-        Assertions.assertEquals(BigDecimal.valueOf(300), body.getTotalPrice());
+        Assertions.assertEquals(0, BigDecimal.valueOf(300).compareTo(body.getTotalPrice()));
         Assertions.assertEquals(1, body.getServices().size());
         Mockito.verify(bookingRepo, Mockito.times(1)).save(Mockito.any(Booking.class));
     }

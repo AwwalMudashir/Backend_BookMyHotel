@@ -19,7 +19,6 @@ public class UserDataDetailsService implements UserDetailsService {
         User user = userRepo.findByEmail(username);
 
         if(user == null){
-            System.out.println("User Not Found !");
             throw new UsernameNotFoundException("User Not Found !");
         }
 

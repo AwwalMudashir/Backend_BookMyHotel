@@ -40,12 +40,6 @@ public class BookingController {
         return bookingService.createBooking(authentication, request);
     }
 
-    @PostMapping("/{bookingId}/confirm")
-    @PreAuthorize("hasAuthority('CUSTOMER')")
-    public ResponseEntity<?> confirmBooking(@PathVariable Long bookingId) {
-        return bookingService.confirmBooking(bookingId);
-    }
-
     @PostMapping("/{bookingId}/cancel")
     @PreAuthorize("hasAuthority('CUSTOMER')")
     public ResponseEntity<?> cancelBooking(

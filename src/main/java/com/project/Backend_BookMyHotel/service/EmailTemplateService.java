@@ -153,13 +153,37 @@ public class EmailTemplateService {
             BigDecimal ecoPointsDiscount,
             List<BookingServiceLine> services
     ) {
+        return bookingConfirmationTemplate(guestName, bookingRef, hotelName, branchLocation, roomType,
+                checkInDate, checkOutDate, accommodationPrice, totalPrice, currency,
+                ecoPointsRedeemed, ecoPointsDiscount, null, null, BigDecimal.ZERO, services);
+    }
+
+    public String bookingConfirmationTemplate(
+            String guestName,
+            String bookingRef,
+            String hotelName,
+            String branchLocation,
+            String roomType,
+            LocalDate checkInDate,
+            LocalDate checkOutDate,
+            BigDecimal accommodationPrice,
+            BigDecimal totalPrice,
+            String currency,
+            Integer ecoPointsRedeemed,
+            BigDecimal ecoPointsDiscount,
+            String packageName,
+            String packageCode,
+            BigDecimal packageDiscount,
+            List<BookingServiceLine> services
+    ) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy");
         String formattedCheckIn  = checkInDate.format(formatter);
         String formattedCheckOut = checkOutDate.format(formatter);
         long nights = ChronoUnit.DAYS.between(checkInDate, checkOutDate);
         String formattedPrice = currency + " " + totalPrice.setScale(2, RoundingMode.HALF_UP).toPlainString();
         String serviceDetails = bookingServicesSection(
-                accommodationPrice, totalPrice, currency, ecoPointsRedeemed, ecoPointsDiscount, services);
+                accommodationPrice, totalPrice, currency, ecoPointsRedeemed, ecoPointsDiscount,
+                packageName, packageCode, packageDiscount, services);
 
         return """
 <div style="font-family: 'Helvetica Neue', Arial, sans-serif; padding:32px 16px; background:#f4f6f8; color:#111827;">
@@ -261,15 +285,30 @@ public class EmailTemplateService {
 
     private String bookingServicesSection(BigDecimal accommodationPrice, BigDecimal totalPrice,
                                           String currency, Integer ecoPointsRedeemed,
-                                          BigDecimal ecoPointsDiscount, List<BookingServiceLine> services) {
+                                          BigDecimal ecoPointsDiscount, String packageName,
+                                          String packageCode, BigDecimal packageDiscount,
+                                          List<BookingServiceLine> services) {
         int redeemed = ecoPointsRedeemed != null ? ecoPointsRedeemed : 0;
         BigDecimal pointsDiscount = ecoPointsDiscount != null ? ecoPointsDiscount : BigDecimal.ZERO;
-        if ((services == null || services.isEmpty()) && redeemed == 0) return "";
+        BigDecimal packageSaving = packageDiscount != null ? packageDiscount : BigDecimal.ZERO;
+        boolean hasPackage = packageName != null && !packageName.isBlank() && packageSaving.signum() > 0;
+        if ((services == null || services.isEmpty()) && redeemed == 0 && !hasPackage) return "";
 
         StringBuilder rows = new StringBuilder();
         rows.append("<tr><td style=\"padding:7px 0;color:#6b7280;\">Accommodation</td>")
                 .append("<td align=\"right\" style=\"padding:7px 0;color:#111827;\">")
                 .append(formatMoney(currency, accommodationPrice)).append("</td></tr>");
+
+        if (hasPackage) {
+            rows.append("<tr><td style=\"padding:7px 0;color:#236952;\">Off-season package: ")
+                    .append(escapeHtml(packageName));
+            if (packageCode != null && !packageCode.isBlank()) {
+                rows.append(" <span style=\"font-size:11px;color:#6b7280;\">(")
+                        .append(escapeHtml(packageCode)).append(")</span>");
+            }
+            rows.append("</td><td align=\"right\" style=\"padding:7px 0;color:#236952;font-weight:700;\">-")
+                    .append(formatMoney(currency, packageSaving)).append("</td></tr>");
+        }
 
         if (redeemed > 0) {
             rows.append("<tr><td style=\"padding:7px 0;color:#236952;\">Eco points discount ")
@@ -290,7 +329,7 @@ public class EmailTemplateService {
         }
 
         return """
-        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Services &amp; Payment Details</h3>
+        <h3 style="font-size:13px; color:#111827; text-transform:uppercase; letter-spacing:0.06em; margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid #e5e7eb;">Package, Services &amp; Payment Details</h3>
         <table width="100%%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom:28px;font-size:14px;">
             %s
             <tr>

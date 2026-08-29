@@ -10,6 +10,9 @@ import com.project.Backend_BookMyHotel.dto.UpdateProfileDto;
 import com.project.Backend_BookMyHotel.dto.SessionUserDto;
 import com.project.Backend_BookMyHotel.dto.TokenRefreshRequest;
 import com.project.Backend_BookMyHotel.dto.TokenRefreshResponse;
+import com.project.Backend_BookMyHotel.dto.ResetPasswordDto;
+import com.project.Backend_BookMyHotel.dto.VerifyOtpDto;
+import com.project.Backend_BookMyHotel.dto.VerifyOtpResponse;
 import com.project.Backend_BookMyHotel.repository.OtpRepository;
 import com.project.Backend_BookMyHotel.repository.UserRepository;
 import com.project.Backend_BookMyHotel.service.EmailTemplateService;
@@ -66,7 +69,6 @@ public class AuthServiceTest {
         user.setPassword("Passsword123");
         user.setRole(Role.CUSTOMER);
         Mockito.when(userRepo.existsByEmail(user.getEmail())).thenReturn(false);
-        Mockito.when(passwordEncoder.encode(user.getPassword())).thenReturn("hashedPassword");
         Mockito.when(userRepo.save(Mockito.any(User.class))).thenReturn(user);
 
         OnboardDto obj = new OnboardDto();
@@ -196,6 +198,8 @@ public class AuthServiceTest {
         Mockito.when(otpRepo.save(Mockito.any(OtpVerification.class))).thenReturn(savedOtp);
         Mockito.when(emailTemplateService.otpTemplate(Mockito.eq(email), Mockito.anyString(), Mockito.eq(5)))
             .thenReturn("otp-template");
+        Mockito.when(resendEmailService.sendEmail(Mockito.eq(email), Mockito.eq("OTP Verification"), Mockito.eq("otp-template")))
+            .thenReturn(true);
 
         ResponseEntity<?> response = userService.forgotPassword(email);
 
@@ -205,5 +209,51 @@ public class AuthServiceTest {
         Assertions.assertEquals("OTP sent successfully.", body.get("message"));
         Assertions.assertEquals(99L, body.get("entryId"));
         Mockito.verify(otpRepo, Mockito.times(1)).save(Mockito.any(OtpVerification.class));
+    }
+
+    @Test
+    void verifyOtp_ReturnsOneTimeResetToken() {
+        String email = "forgot@example.com";
+        OtpVerification otp = new OtpVerification(email, "123456", java.time.LocalDateTime.now().plusMinutes(5));
+        otp.setId(99L);
+        Mockito.when(otpRepo.findByIdAndEmail(99L, email)).thenReturn(java.util.Optional.of(otp));
+        Mockito.when(otpRepo.save(Mockito.any(OtpVerification.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        VerifyOtpDto request = new VerifyOtpDto();
+        request.setEntryId(99L);
+        request.setEmail(email);
+        request.setOtpValue("123456");
+
+        ResponseEntity<?> response = userService.verifyOtp(request);
+
+        Assertions.assertEquals(HttpStatus.OK, response.getStatusCode());
+        VerifyOtpResponse body = (VerifyOtpResponse) response.getBody();
+        Assertions.assertNotNull(body);
+        Assertions.assertTrue(body.isSuccess());
+        Assertions.assertNotNull(body.getResetToken());
+        Assertions.assertFalse(body.getResetToken().isBlank());
+        Assertions.assertNull(otp.getOtpValue());
+    }
+
+    @Test
+    void resetPassword_WithoutReturnedResetToken_IsRejected() {
+        String email = "forgot@example.com";
+        User user = new User();
+        user.setEmail(email);
+        user.setPassword(new BCryptPasswordEncoder(12).encode("OldPassword1!"));
+        OtpVerification otp = new OtpVerification(email, null, java.time.LocalDateTime.now().plusMinutes(5));
+        otp.setResetToken("server-issued-token");
+        Mockito.when(userRepo.findByEmail(email)).thenReturn(user);
+        Mockito.when(otpRepo.findByEmail(email)).thenReturn(java.util.Optional.of(otp));
+
+        ResetPasswordDto request = new ResetPasswordDto();
+        request.setEmail(email);
+        request.setNewPassword("NewPassword1!");
+        request.setConfirmPassword("NewPassword1!");
+
+        ResponseEntity<?> response = userService.resetPassword(null, request);
+
+        Assertions.assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode());
+        Mockito.verify(userRepo, Mockito.never()).save(Mockito.any(User.class));
     }
 }

@@ -23,6 +23,10 @@ public class BookingDetailResponse {
     private BookingStatus status;
     private BigDecimal totalPrice;
     private String promoCode;
+    private Long packageId;
+    private String packageCode;
+    private String packageName;
+    private BigDecimal packageDiscount;
     private Integer ecoPointsEarned;
     private Integer ecoPointsRedeemed;
     private BigDecimal ecoPointsDiscount;
